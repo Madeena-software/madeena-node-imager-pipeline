@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import api from '../services/api';
 
 const ImagePreviewPanel = ({ nodes, processingStatus }) => {
   const [inputImageId, setInputImageId] = useState(null);
   const [outputImageIds, setOutputImageIds] = useState([]);
+  const timestampRef = useRef(Date.now());
 
   // Get input image from nodes
   useEffect(() => {
     const inputNode = nodes.find(node => node.data.nodeType === 'input');
-    if (inputNode && inputNode.data.file_id) {
+    if (inputNode?.data?.file_id) {
       setInputImageId(inputNode.data.file_id);
+      timestampRef.current = Date.now(); // refresh cache on change
     } else {
       setInputImageId(null);
     }
@@ -20,11 +23,14 @@ const ImagePreviewPanel = ({ nodes, processingStatus }) => {
       .filter(status => status.output_id)
       .map(status => status.output_id);
     setOutputImageIds(outputs);
+    if (outputs.length) timestampRef.current = Date.now();
   }, [processingStatus]);
 
   if (!inputImageId && outputImageIds.length === 0) {
     return null;
   }
+
+  const t = timestampRef.current;
 
   return (
     <div className="image-preview-panel">
@@ -36,10 +42,9 @@ const ImagePreviewPanel = ({ nodes, processingStatus }) => {
             <h5>Input Image</h5>
             <img 
               key={inputImageId}
-              src={`http://localhost:5000/api/image/${inputImageId}?t=${Date.now()}`}
+              src={`${api.imageUrl(inputImageId)}?t=${t}`}
               alt="Input"
               onError={(e) => {
-                console.error('Failed to load input image:', inputImageId);
                 e.target.style.display = 'none';
               }}
             />
@@ -50,16 +55,15 @@ const ImagePreviewPanel = ({ nodes, processingStatus }) => {
           <div className="preview-item" key={outputId}>
             <h5>Output Image {outputImageIds.length > 1 ? `${index + 1}` : ''}</h5>
             <img 
-              src={`http://localhost:5000/api/image/${outputId}?t=${Date.now()}`}
+              src={`${api.imageUrl(outputId)}?t=${t}`}
               alt={`Output ${index + 1}`}
               onError={(e) => {
-                console.error('Failed to load output image:', outputId);
                 e.target.style.display = 'none';
               }}
             />
             <div className="preview-actions">
               <a
-                href={`http://localhost:5000/api/image/${outputId}`}
+                href={api.imageUrl(outputId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="preview-button"
@@ -67,7 +71,7 @@ const ImagePreviewPanel = ({ nodes, processingStatus }) => {
                 🔍 View Full Size
               </a>
               <a
-                href={`http://localhost:5000/api/image/${outputId}`}
+                href={api.imageUrl(outputId)}
                 download={`output_${index + 1}_${outputId}.png`}
                 className="preview-button"
               >

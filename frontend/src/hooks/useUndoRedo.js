@@ -1,58 +1,66 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 const MAX_HISTORY_SIZE = 50;
 
+/**
+ * Generic undo/redo hook.
+ *
+ * Uses a ref for the history stack so that `setState`, `undo`, and `redo`
+ * always see the latest values — avoiding the stale-closure issue that
+ * occurs when depending on `history` / `currentIndex` state directly
+ * inside `useCallback`.
+ */
 const useUndoRedo = (initialState) => {
-  const [history, setHistory] = useState([initialState]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const historyRef = useRef([initialState]);
+  const indexRef = useRef(0);
+
+  // A counter that forces a re-render whenever we touch the timeline.
+  const [, setTick] = useState(0);
+  const bump = () => setTick((t) => t + 1);
 
   const setState = useCallback((newState) => {
-    const newHistory = history.slice(0, currentIndex + 1);
-    newHistory.push(newState);
-    
-    // Cap history size to prevent memory leaks
-    if (newHistory.length > MAX_HISTORY_SIZE) {
-      const trimCount = newHistory.length - MAX_HISTORY_SIZE;
-      newHistory.splice(0, trimCount);
+    const h = historyRef.current.slice(0, indexRef.current + 1);
+    h.push(newState);
+
+    // Cap history size
+    if (h.length > MAX_HISTORY_SIZE) {
+      h.splice(0, h.length - MAX_HISTORY_SIZE);
     }
-    
-    setHistory(newHistory);
-    setCurrentIndex(newHistory.length - 1);
-  }, [history, currentIndex]);
+
+    historyRef.current = h;
+    indexRef.current = h.length - 1;
+    bump();
+  }, []);
 
   const undo = useCallback(() => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-      return history[currentIndex - 1];
+    if (indexRef.current > 0) {
+      indexRef.current -= 1;
+      bump();
+      return historyRef.current[indexRef.current];
     }
-    return history[currentIndex];
-  }, [currentIndex, history]);
+    return historyRef.current[indexRef.current];
+  }, []);
 
   const redo = useCallback(() => {
-    if (currentIndex < history.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      return history[currentIndex + 1];
+    if (indexRef.current < historyRef.current.length - 1) {
+      indexRef.current += 1;
+      bump();
+      return historyRef.current[indexRef.current];
     }
-    return history[currentIndex];
-  }, [currentIndex, history]);
+    return historyRef.current[indexRef.current];
+  }, []);
 
-  const canUndo = currentIndex > 0;
-  const canRedo = currentIndex < history.length - 1;
+  const clearHistory = useCallback(() => {
+    historyRef.current = [initialState];
+    indexRef.current = 0;
+    bump();
+  }, [initialState]);
 
-  const currentState = history[currentIndex];
+  const canUndo = indexRef.current > 0;
+  const canRedo = indexRef.current < historyRef.current.length - 1;
+  const state = historyRef.current[indexRef.current];
 
-  return {
-    state: currentState,
-    setState,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    clearHistory: () => {
-      setHistory([initialState]);
-      setCurrentIndex(0);
-    }
-  };
+  return { state, setState, undo, redo, canUndo, canRedo, clearHistory };
 };
 
 export default useUndoRedo;

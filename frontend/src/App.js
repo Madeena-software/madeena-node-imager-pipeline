@@ -100,20 +100,25 @@ function App() {
     
     // Setup socket listeners
     socketService.connect();
-    
-    socketService.on('pipeline_progress', (data) => {
+
+    const handleProgress = (data) => {
       setProcessingStatus(prev => [...prev, data]);
-    });
-    
-    socketService.on('pipeline_error', (data) => {
+    };
+
+    const handleError = (data) => {
       setProcessingStatus(prev => [...prev, {
         status: 'error',
         message: data.error
       }]);
       setIsProcessing(false);
-    });
+    };
+
+    socketService.on('pipeline_progress', handleProgress);
+    socketService.on('pipeline_error', handleError);
 
     return () => {
+      socketService.off('pipeline_progress', handleProgress);
+      socketService.off('pipeline_error', handleError);
       socketService.disconnect();
     };
   }, []);
@@ -440,7 +445,8 @@ function App() {
 
   // Pipeline management
   const handleSavePipeline = (name) => {
-    console.log(`Pipeline "${name}" saved successfully`);
+    // Save is handled by SaveLoadModal via pipelineStorage.
+    // This callback runs after a successful save for any extra side-effects.
   };
 
   const handleLoadPipeline = (pipeline) => {
@@ -586,9 +592,6 @@ function App() {
           targetHandle: edge.targetHandle
         }))
       };
-
-      console.log('Pipeline data being sent:', JSON.stringify(pipelineData, null, 2)); // Debug log
-      console.log('Selected file:', selectedFile); // Debug log
 
       const response = await api.executePipeline(pipelineData);
       

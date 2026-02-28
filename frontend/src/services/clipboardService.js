@@ -24,7 +24,7 @@ class ClipboardService {
   generateNewNodeIds(nodes, edges) {
     const idMapping = {};
     const newNodes = nodes.map(node => {
-      const newId = `${node.data.nodeType || 'node'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newId = `${node.data.nodeType || 'node'}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
       idMapping[node.id] = newId;
       return {
         ...node,

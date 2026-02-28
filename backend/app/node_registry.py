@@ -1,3 +1,5 @@
+"""Central registry mapping processor IDs to their instances."""
+
 from app.processors.basic_processors import (
     ResizeProcessor, BlurProcessor, BrightnessProcessor, EdgeDetectionProcessor,
     RotateProcessor, FlipProcessor, CropProcessor, GrayscaleProcessor,
@@ -118,7 +120,6 @@ class NodeRegistry:
             # Color operations
             'blur': 'Enhancement',
             'brightness': 'Color',
-            'brighten': 'Color',
             'grayscale': 'Color',
             'sepia': 'Color',
             'invert': 'Color',

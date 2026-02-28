@@ -10,8 +10,7 @@ const CustomNode = ({ data, isConnectable }) => {
   }, [data]);
 
   const handleDoubleClick = useCallback((event) => {
-    console.log('Double click detected on node:', data); // Debug log
-    event.stopPropagation(); // Prevent React Flow from handling the event
+    event.stopPropagation();
     if (data.onDoubleClick) {
       data.onDoubleClick();
     }

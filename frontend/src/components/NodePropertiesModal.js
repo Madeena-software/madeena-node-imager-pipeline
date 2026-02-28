@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import api from '../services/api';
 
 const NodePropertiesModal = ({ 
   isOpen, 
@@ -11,14 +12,12 @@ const NodePropertiesModal = ({
   const [nodeInfo, setNodeInfo] = useState(null);
 
   useEffect(() => {
-    console.log('NodePropertiesModal props changed:', { isOpen, node, availableNodes }); // Debug log
     if (isOpen && node) {
       // Initialize parameters with current values or defaults
       setParameters(node.data.parameters || {});
       
       // Get node definition from available nodes
       const nodeDefinition = availableNodes.find(n => n.id === node.data.nodeType);
-      console.log('Found node definition:', nodeDefinition); // Debug log
       setNodeInfo(nodeDefinition);
     }
   }, [isOpen, node, availableNodes]);
@@ -259,23 +258,16 @@ const NodePropertiesModal = ({
                     const file = e.target.files[0];
                     if (!file) return;
                     try {
-                      const api = await import('../services/api');
-                      const response = await api.default.uploadImage(file);
-                      // Update node data with new file_id and filename
+                      const response = await api.uploadImage(file);
                       if (onUpdateNode && node) {
-                        // For input nodes, file_id and filename go directly in node.data, not in parameters
                         onUpdateNode(node.id, parameters, {
                           file_id: response.data.file_id,
                           filename: response.data.filename,
                         });
-                        // Update local state to reflect the change immediately
-                        node.data.file_id = response.data.file_id;
-                        node.data.filename = response.data.filename;
-                        // Force re-render
-                        setNodeInfo({...nodeInfo});
+                        // Trigger re-render via fresh nodeInfo reference
+                        setNodeInfo(prev => ({ ...prev }));
                       }
                     } catch (err) {
-                      console.error('Upload error:', err);
                       alert('Image upload failed: ' + (err.response?.data?.error || err.message));
                     }
                   }}

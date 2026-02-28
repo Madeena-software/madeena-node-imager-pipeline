@@ -1,9 +1,19 @@
-Flask==2.3.3
-Flask-CORS==4.0.0
-Flask-SocketIO==5.3.6
-opencv-python==4.8.1.78
-Pillow==10.0.1
-numpy==1.24.3
-python-socketio==5.9.0
-eventlet==0.33.3
-python-dotenv==1.0.0
+# Core
+Flask>=3.0,<4.0
+Flask-CORS>=4.0,<5.0
+Flask-SocketIO>=5.3,<6.0
+python-socketio>=5.9,<6.0
+python-dotenv>=1.0,<2.0
+eventlet>=0.33,<1.0
+
+# Image processing
+opencv-python>=4.8,<5.0
+Pillow>=10.0,<11.0
+numpy>=1.24,<2.0
+
+# Production WSGI (optional)
+gunicorn>=21.0,<23.0
+
+# Testing
+pytest>=7.4,<9.0
+pytest-cov>=4.1,<6.0

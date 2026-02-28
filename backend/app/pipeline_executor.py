@@ -1,17 +1,22 @@
+"""Pipeline executor — runs a connected graph of image processing nodes."""
+
 import os
 import uuid
-import cv2
 import logging
+
+import cv2
+
 from app.node_registry import NodeRegistry
 
 logger = logging.getLogger(__name__)
 
+
 class PipelineExecutor:
-    """Executes image processing pipelines"""
-    
-    def __init__(self, socketio=None):
+    """Executes image processing pipelines."""
+
+    def __init__(self, socketio=None, node_registry=None):
         self.socketio = socketio
-        self.node_registry = NodeRegistry()
+        self.node_registry = node_registry or NodeRegistry()
         # Get the base directory (backend folder)
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
@@ -22,9 +27,9 @@ class PipelineExecutor:
             execution_graph = self._build_execution_graph(nodes, edges)
             
             # Find ALL input nodes (support multiple inputs for multi-input processors)
-            input_nodes = [node for node in nodes if node['type'] == 'input']
-            if not input_nodes:
-                raise Exception("No input node found in pipeline")
+            source_input_nodes = [node for node in nodes if node['type'] == 'input']
+            if not source_input_nodes:
+                raise ValueError("No input node found in pipeline")
             
             uploads_folder = os.path.join(self.base_dir, 'uploads')
             
@@ -32,7 +37,7 @@ class PipelineExecutor:
             node_outputs = {}
             
             # Process all input nodes and load their images
-            for input_node in input_nodes:
+            for input_node in source_input_nodes:
                 file_id = input_node['data'].get('file_id')
                 if not file_id:
                     logger.warning(f"Input node {input_node['id']} has no file_id, skipping")
@@ -61,7 +66,7 @@ class PipelineExecutor:
                 raise Exception("No valid input images found")
             
             # Get first input node for execution order (any input node works as starting point)
-            first_input_node = input_nodes[0]
+            first_input_node = source_input_nodes[0]
             processed_nodes = set()
             output_results = []
             
@@ -78,14 +83,14 @@ class PipelineExecutor:
                     continue
                     
                 elif node['type'] == 'output':
-                    # Get the image from the input node
-                    input_nodes = execution_graph[node['id']]['inputs']
-                    if not input_nodes:
-                        raise Exception(f"Output node {node['id']} has no input")
-                    
-                    source_image_path = node_outputs.get(input_nodes[0])
+                    # Get the image feeding into this output node
+                    output_source_ids = execution_graph[node['id']]['inputs']
+                    if not output_source_ids:
+                        raise ValueError(f"Output node {node['id']} has no input")
+
+                    source_image_path = node_outputs.get(output_source_ids[0])
                     if not source_image_path:
-                        raise Exception(f"No image available from source node {input_nodes[0]}")
+                        raise ValueError(f"No image available from source node {output_source_ids[0]}")
                     
                     # Save final result
                     output_id = str(uuid.uuid4())
@@ -106,14 +111,14 @@ class PipelineExecutor:
                     processed_nodes.add(node['id'])
                     
                 else:
-                    # Process node - get image from input node(s)
-                    input_nodes = execution_graph[node['id']]['inputs']
-                    if not input_nodes:
-                        raise Exception(f"Processing node {node['id']} has no input")
+                    # Process node — get image from input node(s)
+                    upstream_ids = execution_graph[node['id']]['inputs']
+                    if not upstream_ids:
+                        raise ValueError(f"Processing node {node['id']} has no input")
                     
                     processor = self.node_registry.get_processor(node['type'])
                     if not processor:
-                        raise Exception(f"Unknown processor: {node['type']}")
+                        raise ValueError(f"Unknown processor: {node['type']}")
                     
                     # Emit progress update
                     if self.socketio:
@@ -151,7 +156,7 @@ class PipelineExecutor:
                         logger.info(f"Multi-input processing with {len(images_dict)} slots: {list(images_dict.keys())}")
                         
                         if not images_dict:
-                            raise Exception(f"No images available for multi-input processor {processor.name}")
+                            raise ValueError(f"No images available for multi-input processor {processor.name}")
                         
                         # Resize images to match dimensions if needed for multi-input ops
                         if len(images_dict) > 1:
@@ -170,23 +175,23 @@ class PipelineExecutor:
                         if hasattr(processor, 'process_multi'):
                             processed_image = processor.process_multi(images_dict, **node['data'])
                         else:
-                            raise Exception(f"Processor {processor.name} claims multi_input but has no process_multi method")
+                            raise TypeError(f"Processor {processor.name} claims multi_input but has no process_multi method")
                     
                     else:
                         # Single input processor (existing behavior)
-                        source_image_path = node_outputs.get(input_nodes[0])
+                        source_image_path = node_outputs.get(upstream_ids[0])
                         if not source_image_path:
-                            raise Exception(f"No image available from source node {input_nodes[0]}")
+                            raise ValueError(f"No image available from source node {upstream_ids[0]}")
                         
                         logger.debug(f"Input image path: {source_image_path}")
                         
                         # Verify source image exists and is loadable
                         if not os.path.exists(source_image_path):
-                            raise Exception(f"Image file not found: {source_image_path}")
+                            raise FileNotFoundError(f"Image file not found: {source_image_path}")
                         
                         test_img = cv2.imread(source_image_path)
                         if test_img is None:
-                            raise Exception(f"Cannot load image for processing: {source_image_path}")
+                            raise ValueError(f"Cannot load image for processing: {source_image_path}")
                         
                         processed_image = processor.process(source_image_path, **node['data'])
                     
