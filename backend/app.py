@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _config = get_config()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
 app.config.from_object(_config)
 
 # CORS — restrict in production via CORS_ORIGINS env var

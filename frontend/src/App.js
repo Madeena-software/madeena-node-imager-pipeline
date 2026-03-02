@@ -532,14 +532,20 @@ function App() {
 
     setNodeGroups(prev =>
       prev.map(g =>
-        g.id === groupId ? { ...g, collapsed: newCollapsed } : g
+        g.id === groupId ? {
+          ...g,
+          collapsed: newCollapsed
+        } : g
       )
     );
 
     setNodes(nds =>
       nds.map(node => {
         if (group.nodeIds.includes(node.id)) {
-          return { ...node, hidden: newCollapsed };
+          return {
+            ...node,
+            hidden: newCollapsed
+          };
         }
         return node;
       })
@@ -640,313 +646,173 @@ function App() {
     clearHistory();
   }, [setNodes, setEdges, setProcessingStatus, setNodeGroups, clearHistory]);
 
-  // prettier-ignore
-  return ( <
-    div className = "app" >
-    <
-    div className = "toolbar" >
-    <
-    button className = "sidebar-toggle"
-    onClick = {
-      toggleSidebar
-    }
-    title = "Toggle sidebar"
-    aria - label = "Toggle sidebar" > ☰
-    <
-    /button> <
-    h1 > Image Processing Pipeline < /h1>
+  return (
+    <div className="app">
+      <div className="toolbar">
+        <button
+          className="sidebar-toggle"
+          onClick={toggleSidebar}
+          title="Toggle sidebar"
+          aria-label="Toggle sidebar"
+        >
+          ☰
+        </button>
+        <h1>Image Processing Pipeline</h1>
 
-    <
-    div className = "toolbar-section" >
-    <
-    button onClick = {
-      executePipeline
-    }
-    disabled = {
-      isProcessing
-    } > {
-      isProcessing ? 'Processing...' : 'Execute Pipeline'
-    } <
-    /button> <
-    button onClick = {
-      clearPipeline
-    } > Clear All < /button> <
-    /div>
+        <div className="toolbar-section">
+          <button onClick={executePipeline} disabled={isProcessing}>
+            {isProcessing ? 'Processing...' : 'Execute Pipeline'}
+          </button>
+          <button onClick={clearPipeline}>Clear All</button>
+        </div>
 
-    <
-    div className = "toolbar-divider" > < /div>
+        <div className="toolbar-divider" />
 
-    <
-    div className = "toolbar-section" >
-    <
-    button onClick = {
-      handleUndo
-    }
-    disabled = {
-      !canUndo
-    }
-    title = "Undo (Ctrl+Z)" > ↶Undo < /button> <
-    button onClick = {
-      handleRedo
-    }
-    disabled = {
-      !canRedo
-    }
-    title = "Redo (Ctrl+Shift+Z)" > ↷Redo < /button> <
-    /div>
+        <div className="toolbar-section">
+          <button onClick={handleUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+            ↶Undo
+          </button>
+          <button onClick={handleRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+            ↷Redo
+          </button>
+        </div>
 
-    <
-    div className = "toolbar-divider" > < /div>
+        <div className="toolbar-divider" />
 
-    <
-    div className = "toolbar-section" >
-    <
-    button onClick = {
-      handleCopy
-    }
-    title = "Copy selected nodes (Ctrl+C)" > 📋Copy < /button> <
-    button onClick = {
-      handlePaste
-    }
-    disabled = {
-      !clipboardService.hasData()
-    }
-    title = "Paste nodes (Ctrl+V)" > 📄Paste < /button> <
-    /div>
+        <div className="toolbar-section">
+          <button onClick={handleCopy} title="Copy selected nodes (Ctrl+C)">
+            📋Copy
+          </button>
+          <button
+            onClick={handlePaste}
+            disabled={!clipboardService.hasData()}
+            title="Paste nodes (Ctrl+V)"
+          >
+            📄Paste
+          </button>
+        </div>
 
-    <
-    div className = "toolbar-divider" > < /div>
+        <div className="toolbar-divider" />
 
-    <
-    div className = "toolbar-section" >
-    <
-    button onClick = {
-      () => setShowSaveLoadModal(true)
-    }
-    title = "Save/Load Pipeline (Ctrl+S)" > 💾Save / Load < /button> <
-    button onClick = {
-      toggleTheme
-    }
-    className = "theme-toggle"
-    title = "Toggle Theme" > {
-      isDarkTheme ? '☀️' : '🌙'
-    } <
-    /button> <
-    button onClick = {
-      () => setShowShortcutsPanel(true)
-    }
-    title = "Keyboard Shortcuts (? or F1)" > ⌨️Help < /button> <
-    /div>
+        <div className="toolbar-section">
+          <button
+            onClick={() => setShowSaveLoadModal(true)}
+            title="Save/Load Pipeline (Ctrl+S)"
+          >
+            💾Save/Load
+          </button>
+          <button onClick={toggleTheme} className="theme-toggle" title="Toggle Theme">
+            {isDarkTheme ? '☀️' : '🌙'}
+          </button>
+          <button
+            onClick={() => setShowShortcutsPanel(true)}
+            title="Keyboard Shortcuts (? or F1)"
+          >
+            ⌨️Help
+          </button>
+        </div>
 
-    <
-    span className = "shortcut-hint" >
-    Shortcuts: ? or F1 = Help, Del = Delete, Ctrl + Z = Undo, Ctrl + C / V = Copy / Paste <
-    /span> <
-    /div>
+        <span className="shortcut-hint">
+          Shortcuts: ? or F1 = Help, Del = Delete, Ctrl+Z = Undo, Ctrl+C/V = Copy/Paste
+        </span>
+      </div>
 
-    <
-    div className = "main-content" > {
-      sidebarOpen && ( <
-        div className = "sidebar-overlay"
-        onClick = {
-          toggleSidebar
-        }
-        aria - hidden = "true" / >
-      )
-    } <
-    div className = {
-      `sidebar${sidebarOpen ? ' sidebar-open' : ''}`
-    } >
-    <
-    button className = "sidebar-close"
-    onClick = {
-      toggleSidebar
-    }
-    title = "Close sidebar"
-    aria - label = "Close sidebar" > ✕
-    <
-    /button> <
-    NodePalette nodes = {
-      availableNodes
-    }
-    /> <
-    NodeGroupPanel nodes = {
-      nodes
-    }
-    groups = {
-      nodeGroups
-    }
-    onCreateGroup = {
-      handleCreateGroup
-    }
-    onDeleteGroup = {
-      handleDeleteGroup
-    }
-    onToggleGroupVisibility = {
-      handleToggleGroupVisibility
-    }
-    /> <
-    /div>
+      <div className="main-content">
+        {sidebarOpen && (
+          <div
+            className="sidebar-overlay"
+            onClick={toggleSidebar}
+            aria-hidden="true"
+          />
+        )}
+        <div className={`sidebar${sidebarOpen ? ' sidebar-open' : ''}`}>
+          <button
+            className="sidebar-close"
+            onClick={toggleSidebar}
+            title="Close sidebar"
+            aria-label="Close sidebar"
+          >
+            ✕
+          </button>
+          <NodePalette nodes={availableNodes} />
+          <NodeGroupPanel
+            nodes={nodes}
+            groups={nodeGroups}
+            onCreateGroup={handleCreateGroup}
+            onDeleteGroup={handleDeleteGroup}
+            onToggleGroupVisibility={handleToggleGroupVisibility}
+          />
+        </div>
 
-    <
-    div className = "flow-container" >
-    <
-    ReactFlow nodes = {
-      nodes
-    }
-    edges = {
-      edges
-    }
-    onNodesChange = {
-      onNodesChange
-    }
-    onEdgesChange = {
-      onEdgesChange
-    }
-    onConnect = {
-      onConnect
-    }
-    onReconnect = {
-      onReconnect
-    }
-    onReconnectStart = {
-      onReconnectStart
-    }
-    onReconnectEnd = {
-      onReconnectEnd
-    }
-    onNodeClick = {
-      handleNodeClick
-    }
-    onDrop = {
-      onDrop
-    }
-    onDragOver = {
-      onDragOver
-    }
-    onInit = {
-      (instance) => {
-        reactFlowInstance.current = instance;
-      }
-    }
-    nodeTypes = {
-      nodeTypes
-    }
-    edgeTypes = {
-      edgeTypes
-    }
-    connectionLineStyle = {
-      {
-        stroke: '#4caf50',
-        strokeWidth: 2
-      }
-    }
-    connectionLineType = "bezier"
-    defaultEdgeOptions = {
-      {
-        type: 'default',
-        animated: false,
-        style: {
-          stroke: '#b1b1b7',
-          strokeWidth: 2
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: '#b1b1b7'
-        }
-      }
-    }
-    selectNodesOnDrag = {
-      false
-    }
-    snapToGrid = {
-      false
-    }
-    snapGrid = {
-      [15, 15]
-    }
-    elevateEdgesOnSelect = {
-      true
-    }
-    fitView >
-    <
-    Controls / >
-    <
-    Background color = "#404040"
-    gap = {
-      20
-    }
-    /> <
-    /ReactFlow> <
-    /div> <
-    /div>
+        <div className="flow-container">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onReconnect={onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
+            onNodeClick={handleNodeClick}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onInit={(instance) => {
+              reactFlowInstance.current = instance;
+            }}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            connectionLineStyle={{ stroke: '#4caf50', strokeWidth: 2 }}
+            connectionLineType="bezier"
+            defaultEdgeOptions={{
+              type: 'default',
+              animated: false,
+              style: { stroke: '#b1b1b7', strokeWidth: 2 },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                color: '#b1b1b7',
+              },
+            }}
+            selectNodesOnDrag={false}
+            snapToGrid={false}
+            snapGrid={[15, 15]}
+            elevateEdgesOnSelect={true}
+            fitView
+          >
+            <Controls />
+            <Background color="#404040" gap={20} />
+          </ReactFlow>
+        </div>
+      </div>
 
-    <
-    StatusPanel status = {
-      processingStatus
-    }
-    />
+      <StatusPanel status={processingStatus} />
 
-    <
-    ImagePreviewPanel nodes = {
-      nodes
-    }
-    processingStatus = {
-      processingStatus
-    }
-    />
+      <ImagePreviewPanel nodes={nodes} processingStatus={processingStatus} />
 
-    <
-    SaveLoadModal isOpen = {
-      showSaveLoadModal
-    }
-    onClose = {
-      () => setShowSaveLoadModal(false)
-    }
-    onSave = {
-      handleSavePipeline
-    }
-    onLoad = {
-      handleLoadPipeline
-    }
-    currentPipeline = {
-      {
-        nodes,
-        edges
-      }
-    }
-    />
+      <SaveLoadModal
+        isOpen={showSaveLoadModal}
+        onClose={() => setShowSaveLoadModal(false)}
+        onSave={handleSavePipeline}
+        onLoad={handleLoadPipeline}
+        currentPipeline={{ nodes, edges }}
+      />
 
-    <
-    NodePropertiesModal isOpen = {
-      showPropertiesModal
-    }
-    onClose = {
-      () => {
-        setShowPropertiesModal(false);
-        setSelectedNodeForProperties(null);
-      }
-    }
-    node = {
-      selectedNodeForProperties
-    }
-    onUpdateNode = {
-      handleUpdateNodeProperties
-    }
-    availableNodes = {
-      availableNodes
-    }
-    />
+      <NodePropertiesModal
+        isOpen={showPropertiesModal}
+        onClose={() => {
+          setShowPropertiesModal(false);
+          setSelectedNodeForProperties(null);
+        }}
+        node={selectedNodeForProperties}
+        onUpdateNode={handleUpdateNodeProperties}
+        availableNodes={availableNodes}
+      />
 
-    <
-    KeyboardShortcutsPanel isOpen = {
-      showShortcutsPanel
-    }
-    onClose = {
-      () => setShowShortcutsPanel(false)
-    }
-    /> <
-    /div>
+      <KeyboardShortcutsPanel
+        isOpen={showShortcutsPanel}
+        onClose={() => setShowShortcutsPanel(false)}
+      />
+    </div>
   );
 }
 
