@@ -88,6 +88,64 @@ def _frontend_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
 
 
+def _frontend_build_index() -> str:
+    """Return path to frontend build index.html."""
+    return os.path.join(_BUILD_DIR, "index.html")
+
+
+def _has_frontend_build() -> bool:
+    """Return True when frontend build output exists."""
+    return os.path.isfile(_frontend_build_index())
+
+
+def _should_auto_build_frontend() -> bool:
+    """Return True when frontend auto-build is enabled."""
+    value = os.environ.get("AUTO_BUILD_FRONTEND", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _ensure_frontend_build() -> None:
+    """Ensure frontend build exists for integrated backend+frontend serving."""
+    if _has_frontend_build():
+        logger.info("Frontend build found: %s", _frontend_build_index())
+        return
+
+    logger.warning("Frontend build not found at %s", _frontend_build_index())
+
+    if not _should_auto_build_frontend():
+        logger.warning(
+            "AUTO_BUILD_FRONTEND is disabled. Run 'npm run build' in frontend directory."
+        )
+        return
+
+    frontend_dir = _frontend_dir()
+    npm_executable = shutil.which("npm.cmd") or shutil.which("npm")
+
+    if not os.path.isdir(frontend_dir):
+        logger.warning("Frontend directory not found: %s", frontend_dir)
+        return
+
+    if not npm_executable:
+        logger.warning("npm executable not found in PATH, cannot auto-build frontend")
+        return
+
+    logger.info("Running frontend build check: npm run build")
+    try:
+        subprocess.run(
+            [npm_executable, "run", "build"],
+            cwd=frontend_dir,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.error("Frontend build failed with exit code %s", exc.returncode)
+        return
+
+    if _has_frontend_build():
+        logger.info("Frontend build created successfully")
+    else:
+        logger.warning("Frontend build command finished but build output was not found")
+
+
 def _stop_frontend_dev_server() -> None:
     """Stop frontend dev server process if it is running."""
     global _frontend_process
@@ -273,6 +331,13 @@ _BUILD_DIR = os.path.abspath(
 @app.route("/<path:path>")
 def serve_frontend(path):
     """Serve React build files or fall back to index.html for client-side routing."""
+    if not _has_frontend_build():
+        return (
+            "Frontend build not found. Run `npm run build` in the frontend directory "
+            "or enable AUTO_BUILD_FRONTEND=1.",
+            503,
+        )
+
     if path and os.path.exists(os.path.join(_BUILD_DIR, path)):
         return send_from_directory(_BUILD_DIR, path)
     return send_from_directory(_BUILD_DIR, "index.html")
@@ -299,6 +364,8 @@ def handle_disconnect():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    _ensure_frontend_build()
+
     if (
         not app.config.get("DEBUG", False)
         or os.environ.get("WERKZEUG_RUN_MAIN") == "true"

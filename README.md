@@ -59,6 +59,9 @@ The backend will be available at `http://localhost:5000`
 By default, running `python app.py` also auto-starts the frontend dev server (`npm start`) from `../frontend`.
 To disable this behavior, set `AUTO_START_FRONTEND=0` before running.
 
+When backend and frontend are run as one app, backend now checks `frontend/build/index.html` on startup.
+If the build is missing, it will try `npm run build` automatically (disable with `AUTO_BUILD_FRONTEND=0`).
+
 ### Frontend Setup
 
 1. Navigate to the frontend directory:

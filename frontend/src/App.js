@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactFlow, {
   addEdge,
   Background,
@@ -11,7 +6,7 @@ import ReactFlow, {
   MarkerType,
   reconnectEdge,
   useEdgesState,
-  useNodesState
+  useNodesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -51,7 +46,7 @@ function App() {
   const [isDarkTheme, setIsDarkTheme] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
 
-  const toggleSidebar = () => setSidebarOpen(prev => !prev);
+  const toggleSidebar = () => setSidebarOpen((prev) => !prev);
 
   // Reference for edge reconnection
   const edgeReconnectSuccessful = useRef(true);
@@ -67,10 +62,10 @@ function App() {
     redo,
     canUndo,
     canRedo,
-    clearHistory
+    clearHistory,
   } = useUndoRedo({
     nodes: [],
-    edges: []
+    edges: [],
   });
 
   // Initialize theme from localStorage
@@ -100,11 +95,20 @@ function App() {
     const timer = setTimeout(() => {
       setPipelineHistory({
         nodes,
-        edges
+        edges,
       });
     }, 500);
     return () => clearTimeout(timer);
   }, [nodes, edges, setPipelineHistory]);
+
+  const loadAvailableNodes = useCallback(async () => {
+    try {
+      const response = await api.get('/nodes');
+      setAvailableNodes(response.data);
+    } catch (error) {
+      console.error('Failed to load nodes:', error);
+    }
+  }, [setAvailableNodes]);
 
   useEffect(() => {
     // Load available nodes from backend
@@ -114,14 +118,17 @@ function App() {
     socketService.connect();
 
     const handleProgress = (data) => {
-      setProcessingStatus(prev => [...prev, data]);
+      setProcessingStatus((prev) => [...prev, data]);
     };
 
     const handleError = (data) => {
-      setProcessingStatus(prev => [...prev, {
-        status: 'error',
-        message: data.error
-      }]);
+      setProcessingStatus((prev) => [
+        ...prev,
+        {
+          status: 'error',
+          message: data.error,
+        },
+      ]);
       setIsProcessing(false);
     };
 
@@ -136,22 +143,28 @@ function App() {
   }, [loadAvailableNodes, setProcessingStatus, setIsProcessing]);
 
   // Core node management functions (must be defined first)
-  const deleteNode = useCallback((nodeId) => {
-    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
-  }, [setNodes, setEdges]);
+  const deleteNode = useCallback(
+    (nodeId) => {
+      setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+      setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    },
+    [setNodes, setEdges]
+  );
 
   // Handle double clicks on nodes
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef(null);
 
-  const handleNodeDoubleClick = useCallback((nodeId) => {
-    const node = nodes.find(n => n.id === nodeId);
-    if (node) {
-      setSelectedNodeForProperties(node);
-      setShowPropertiesModal(true);
-    }
-  }, [nodes]);
+  const handleNodeDoubleClick = useCallback(
+    (nodeId) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node) {
+        setSelectedNodeForProperties(node);
+        setShowPropertiesModal(true);
+      }
+    },
+    [nodes]
+  );
 
   // Undo/Redo handlers
   const handleUndo = useCallback(() => {
@@ -172,16 +185,16 @@ function App() {
 
   // Copy/Paste handlers
   const handleCopy = useCallback(() => {
-    const selectedNodes = nodes.filter(node => node.selected);
-    const selectedNodeIds = selectedNodes.map(node => node.id);
-    const selectedEdges = edges.filter(edge =>
-      selectedNodeIds.includes(edge.source) || selectedNodeIds.includes(edge.target)
+    const selectedNodes = nodes.filter((node) => node.selected);
+    const selectedNodeIds = selectedNodes.map((node) => node.id);
+    const selectedEdges = edges.filter(
+      (edge) => selectedNodeIds.includes(edge.source) || selectedNodeIds.includes(edge.target)
     );
 
     if (selectedNodes.length > 0) {
       clipboardService.copy({
         nodes: selectedNodes,
-        edges: selectedEdges
+        edges: selectedEdges,
       });
     }
   }, [nodes, edges]);
@@ -189,16 +202,13 @@ function App() {
   const handlePaste = useCallback(() => {
     const clipboardData = clipboardService.paste();
     if (clipboardData) {
-      const {
-        nodes: newNodes,
-        edges: newEdges
-      } = clipboardService.generateNewNodeIds(
+      const { nodes: newNodes, edges: newEdges } = clipboardService.generateNewNodeIds(
         clipboardData.nodes,
         clipboardData.edges
       );
 
       // Add delete handlers to pasted nodes
-      const nodesWithHandlers = newNodes.map(node => ({
+      const nodesWithHandlers = newNodes.map((node) => ({
         ...node,
         data: {
           ...node.data,
@@ -207,8 +217,8 @@ function App() {
         },
       }));
 
-      setNodes(nds => nds.concat(nodesWithHandlers));
-      setEdges(eds => eds.concat(newEdges));
+      setNodes((nds) => nds.concat(nodesWithHandlers));
+      setEdges((eds) => eds.concat(newEdges));
     }
   }, [deleteNode, handleNodeDoubleClick, setNodes, setEdges]);
 
@@ -265,17 +275,17 @@ function App() {
         }
       } else if (event.key === 'Delete' || event.key === 'Backspace') {
         // Delete selected nodes and edges
-        const selectedNodes = nodes.filter(node => node.selected);
-        const selectedEdges = edges.filter(edge => edge.selected);
+        const selectedNodes = nodes.filter((node) => node.selected);
+        const selectedEdges = edges.filter((edge) => edge.selected);
 
         // Delete selected nodes
-        selectedNodes.forEach(node => {
+        selectedNodes.forEach((node) => {
           deleteNode(node.id);
         });
 
         // Delete selected edges
         if (selectedEdges.length > 0) {
-          setEdges((eds) => eds.filter(edge => !edge.selected));
+          setEdges((eds) => eds.filter((edge) => !edge.selected));
         }
       }
     };
@@ -284,21 +294,27 @@ function App() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [nodes, edges, handleUndo, handleRedo, handleCopy, handlePaste, setShowSaveLoadModal, setShowShortcutsPanel, deleteNode, setEdges, setPipelineHistory]);
+  }, [
+    nodes,
+    edges,
+    handleUndo,
+    handleRedo,
+    handleCopy,
+    handlePaste,
+    setShowSaveLoadModal,
+    setShowShortcutsPanel,
+    deleteNode,
+    setEdges,
+    setPipelineHistory,
+  ]);
 
-  const loadAvailableNodes = useCallback(async () => {
-    try {
-      const response = await api.get('/nodes');
-      setAvailableNodes(response.data);
-    } catch (error) {
-      console.error('Failed to load nodes:', error);
-    }
-  }, [setAvailableNodes]);
-
-  const deleteEdge = useCallback((edgeId) => {
-    setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
-    // Update history will be handled by the effect that watches edges changes
-  }, [setEdges]);
+  const deleteEdge = useCallback(
+    (edgeId) => {
+      setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
+      // Update history will be handled by the effect that watches edges changes
+    },
+    [setEdges]
+  );
 
   const onConnect = useCallback(
     (params) => {
@@ -318,54 +334,67 @@ function App() {
     edgeReconnectSuccessful.current = false;
   }, []);
 
-  const onReconnect = useCallback((oldEdge, newConnection) => {
-    edgeReconnectSuccessful.current = true;
-    setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
-  }, [setEdges]);
+  const onReconnect = useCallback(
+    (oldEdge, newConnection) => {
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [setEdges]
+  );
 
-  const onReconnectEnd = useCallback((_, edge) => {
-    if (!edgeReconnectSuccessful.current) {
-      setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-    }
-    edgeReconnectSuccessful.current = true;
-  }, [setEdges]);
+  const onReconnectEnd = useCallback(
+    (_, edge) => {
+      if (!edgeReconnectSuccessful.current) {
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+      }
+      edgeReconnectSuccessful.current = true;
+    },
+    [setEdges]
+  );
 
-  const handleNodeClick = useCallback((event, node) => {
-    // Clear existing timer
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
-    }
+  const handleNodeClick = useCallback(
+    (event, node) => {
+      // Clear existing timer
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
 
-    clickCountRef.current += 1;
+      clickCountRef.current += 1;
 
-    if (clickCountRef.current === 1) {
-      // Start timer for double-click detection
-      clickTimerRef.current = setTimeout(() => {
+      if (clickCountRef.current === 1) {
+        // Start timer for double-click detection
+        clickTimerRef.current = setTimeout(() => {
+          clickCountRef.current = 0;
+        }, 300);
+      } else if (clickCountRef.current >= 2) {
+        // Double-click detected
         clickCountRef.current = 0;
-      }, 300);
-    } else if (clickCountRef.current >= 2) {
-      // Double-click detected
-      clickCountRef.current = 0;
-      handleNodeDoubleClick(node.id);
-    }
-  }, [handleNodeDoubleClick]);
+        handleNodeDoubleClick(node.id);
+      }
+    },
+    [handleNodeDoubleClick]
+  );
 
-  const handleUpdateNodeProperties = useCallback((nodeId, newParameters, additionalData = {}) => {
-    setNodes((nds) =>
-      nds.map((node) =>
-        node.id === nodeId ? {
-          ...node,
-          data: {
-            ...node.data,
-            ...additionalData,
-            parameters: newParameters
-          }
-        } :
-        node
-      )
-    );
-  }, [setNodes]);
+  const handleUpdateNodeProperties = useCallback(
+    (nodeId, newParameters, additionalData = {}) => {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  ...additionalData,
+                  parameters: newParameters,
+                },
+              }
+            : node
+        )
+      );
+    },
+    [setNodes]
+  );
 
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -455,106 +484,122 @@ function App() {
     // This callback runs after a successful save for any extra side-effects.
   }, []);
 
-  const handleLoadPipeline = useCallback((pipeline) => {
-    // Clear current pipeline
-    setNodes([]);
-    setEdges([]);
-    setProcessingStatus([]);
-    clearHistory();
+  const handleLoadPipeline = useCallback(
+    (pipeline) => {
+      // Clear current pipeline
+      setNodes([]);
+      setEdges([]);
+      setProcessingStatus([]);
+      clearHistory();
 
-    // Load pipeline with delete handlers
-    const nodesWithHandlers = pipeline.nodes.map(node => ({
-      ...node,
-      data: {
-        ...node.data,
-        onDelete: () => deleteNode(node.id),
-        onDoubleClick: () => handleNodeDoubleClick(node.id),
-      }
-    }));
+      // Load pipeline with delete handlers
+      const nodesWithHandlers = pipeline.nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          onDelete: () => deleteNode(node.id),
+          onDoubleClick: () => handleNodeDoubleClick(node.id),
+        },
+      }));
 
-    setTimeout(() => {
-      setNodes(nodesWithHandlers);
-      setEdges(pipeline.edges);
-    }, 100);
-  }, [setNodes, setEdges, setProcessingStatus, clearHistory, deleteNode, handleNodeDoubleClick]);
+      setTimeout(() => {
+        setNodes(nodesWithHandlers);
+        setEdges(pipeline.edges);
+      }, 100);
+    },
+    [setNodes, setEdges, setProcessingStatus, clearHistory, deleteNode, handleNodeDoubleClick]
+  );
 
   // Node grouping
-  const handleCreateGroup = useCallback((group) => {
-    setNodeGroups(prev => [...prev, group]);
+  const handleCreateGroup = useCallback(
+    (group) => {
+      setNodeGroups((prev) => [...prev, group]);
 
-    // Apply group styling to nodes
-    setNodes(nds =>
-      nds.map(node => {
-        if (group.nodeIds.includes(node.id)) {
-          return {
-            ...node,
-            className: `${node.className || ''} grouped`.trim(),
-            style: {
-              ...node.style,
-              '--group-color': group.color
-            }
-          };
-        }
-        return node;
-      })
-    );
-  }, [setNodeGroups, setNodes]);
+      // Apply group styling to nodes
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (group.nodeIds.includes(node.id)) {
+            return {
+              ...node,
+              className: `${node.className || ''} grouped`.trim(),
+              style: {
+                ...node.style,
+                '--group-color': group.color,
+              },
+            };
+          }
+          return node;
+        })
+      );
+    },
+    [setNodeGroups, setNodes]
+  );
 
-  const handleDeleteGroup = useCallback((groupId) => {
-    const group = nodeGroups.find(g => g.id === groupId);
-    if (!group) return;
+  const handleDeleteGroup = useCallback(
+    (groupId) => {
+      const group = nodeGroups.find((g) => g.id === groupId);
+      if (!group) return;
 
-    // Remove group styling from nodes
-    setNodes(nds =>
-      nds.map(node => {
-        if (group.nodeIds.includes(node.id)) {
-          return {
-            ...node,
-            className: node.className ? node.className.replace('grouped', '').trim() || undefined : undefined,
-            style: {
-              ...node.style,
-              '--group-color': undefined
-            }
-          };
-        }
-        return node;
-      })
-    );
+      // Remove group styling from nodes
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (group.nodeIds.includes(node.id)) {
+            return {
+              ...node,
+              className: node.className
+                ? node.className.replace('grouped', '').trim() || undefined
+                : undefined,
+              style: {
+                ...node.style,
+                '--group-color': undefined,
+              },
+            };
+          }
+          return node;
+        })
+      );
 
-    setNodeGroups(prev => prev.filter(g => g.id !== groupId));
-  }, [nodeGroups, setNodes, setNodeGroups]);
+      setNodeGroups((prev) => prev.filter((g) => g.id !== groupId));
+    },
+    [nodeGroups, setNodes, setNodeGroups]
+  );
 
-  const handleToggleGroupVisibility = useCallback((groupId) => {
-    const group = nodeGroups.find(g => g.id === groupId);
-    if (!group) return;
+  const handleToggleGroupVisibility = useCallback(
+    (groupId) => {
+      const group = nodeGroups.find((g) => g.id === groupId);
+      if (!group) return;
 
-    const newCollapsed = !group.collapsed;
+      const newCollapsed = !group.collapsed;
 
-    setNodeGroups(prev =>
-      prev.map(g =>
-        g.id === groupId ? {
-          ...g,
-          collapsed: newCollapsed
-        } : g
-      )
-    );
+      setNodeGroups((prev) =>
+        prev.map((g) =>
+          g.id === groupId
+            ? {
+                ...g,
+                collapsed: newCollapsed,
+              }
+            : g
+        )
+      );
 
-    setNodes(nds =>
-      nds.map(node => {
-        if (group.nodeIds.includes(node.id)) {
-          return {
-            ...node,
-            hidden: newCollapsed
-          };
-        }
-        return node;
-      })
-    );
-  }, [nodeGroups, setNodeGroups, setNodes]);
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (group.nodeIds.includes(node.id)) {
+            return {
+              ...node,
+              hidden: newCollapsed,
+            };
+          }
+          return node;
+        })
+      );
+    },
+    [nodeGroups, setNodeGroups, setNodes]
+  );
 
   const executePipeline = useCallback(async () => {
     // Check if there's an input node with a file_id
-    const inputNode = nodes.find(node => node.data.nodeType === 'input');
+    const inputNode = nodes.find((node) => node.data.nodeType === 'input');
     if (!inputNode || !inputNode.data.file_id) {
       alert('Please upload an image to the input node first');
       return;
@@ -565,15 +610,15 @@ function App() {
 
     try {
       const pipelineData = {
-        nodes: nodes.map(node => {
+        nodes: nodes.map((node) => {
           // Build input_mapping for multi-input nodes
           const input_mapping = {};
 
           if (node.data.multi_input && node.data.input_slots) {
             // Find all edges targeting this node
             edges
-              .filter(edge => edge.target === node.id)
-              .forEach(edge => {
+              .filter((edge) => edge.target === node.id)
+              .forEach((edge) => {
                 // edge.targetHandle contains the slot name (e.g., 'projection', 'gain', 'dark')
                 const slotName = edge.targetHandle || node.data.input_slots[0]; // fallback to first slot
                 input_mapping[slotName] = edge.source;
@@ -586,22 +631,26 @@ function App() {
             data: {
               ...node.data.parameters,
               // Include file_id for input nodes
-              ...(node.data.nodeType === 'input' && node.data.file_id ? {
-                file_id: node.data.file_id
-              } : {}),
+              ...(node.data.nodeType === 'input' && node.data.file_id
+                ? {
+                    file_id: node.data.file_id,
+                  }
+                : {}),
               // Include input_mapping for multi-input nodes
-              ...(Object.keys(input_mapping).length > 0 ? {
-                input_mapping
-              } : {})
-            }
+              ...(Object.keys(input_mapping).length > 0
+                ? {
+                    input_mapping,
+                  }
+                : {}),
+            },
           };
         }),
-        edges: edges.map(edge => ({
+        edges: edges.map((edge) => ({
           source: edge.source,
           target: edge.target,
           sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle
-        }))
+          targetHandle: edge.targetHandle,
+        })),
       };
 
       const response = await api.executePipeline(pipelineData);
@@ -613,26 +662,37 @@ function App() {
         if (result.all_outputs && result.all_outputs.length > 0) {
           // Add status for each output
           result.all_outputs.forEach((output, index) => {
-            setProcessingStatus(prev => [...prev, {
-              status: 'completed',
-              message: `Output ${index + 1} completed successfully`,
-              output_id: output.output_id
-            }]);
+            setProcessingStatus((prev) => [
+              ...prev,
+              {
+                status: 'completed',
+                message: `Output ${index + 1} completed successfully`,
+                output_id: output.output_id,
+              },
+            ]);
           });
         } else {
           // Single output
-          setProcessingStatus(prev => [...prev, {
-            status: 'completed',
-            message: 'Pipeline completed successfully',
-            output_id: result.output_id
-          }]);
+          setProcessingStatus((prev) => [
+            ...prev,
+            {
+              status: 'completed',
+              message: 'Pipeline completed successfully',
+              output_id: result.output_id,
+            },
+          ]);
         }
       }
     } catch (error) {
-      setProcessingStatus(prev => [...prev, {
-        status: 'error',
-        message: (error.response && error.response.data && error.response.data.message) || 'Pipeline execution failed'
-      }]);
+      setProcessingStatus((prev) => [
+        ...prev,
+        {
+          status: 'error',
+          message:
+            (error.response && error.response.data && error.response.data.message) ||
+            'Pipeline execution failed',
+        },
+      ]);
     } finally {
       setIsProcessing(false);
     }
@@ -695,19 +755,13 @@ function App() {
         <div className="toolbar-divider" />
 
         <div className="toolbar-section">
-          <button
-            onClick={() => setShowSaveLoadModal(true)}
-            title="Save/Load Pipeline (Ctrl+S)"
-          >
+          <button onClick={() => setShowSaveLoadModal(true)} title="Save/Load Pipeline (Ctrl+S)">
             💾Save/Load
           </button>
           <button onClick={toggleTheme} className="theme-toggle" title="Toggle Theme">
             {isDarkTheme ? '☀️' : '🌙'}
           </button>
-          <button
-            onClick={() => setShowShortcutsPanel(true)}
-            title="Keyboard Shortcuts (? or F1)"
-          >
+          <button onClick={() => setShowShortcutsPanel(true)} title="Keyboard Shortcuts (? or F1)">
             ⌨️Help
           </button>
         </div>
@@ -719,11 +773,7 @@ function App() {
 
       <div className="main-content">
         {sidebarOpen && (
-          <div
-            className="sidebar-overlay"
-            onClick={toggleSidebar}
-            aria-hidden="true"
-          />
+          <div className="sidebar-overlay" onClick={toggleSidebar} aria-hidden="true" />
         )}
         <div className={`sidebar${sidebarOpen ? ' sidebar-open' : ''}`}>
           <button

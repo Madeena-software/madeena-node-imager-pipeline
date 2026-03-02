@@ -91,16 +91,20 @@ code {
 .main-content {
   flex: 1;
   display: flex;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
   width: 300px;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
-  overflow-y: auto;
-  overflow-x: hidden;
-  height: 100vh;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Custom scrollbar for sidebar */
@@ -128,6 +132,29 @@ code {
 
 .node-palette {
   padding: 20px;
+  flex: 1 1 auto;
+  height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* Custom scrollbar for node palette */
+.node-palette::-webkit-scrollbar {
+  width: 6px;
+}
+
+.node-palette::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+.node-palette::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.node-palette::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-tertiary);
 }
 
 .node-palette h3 {
@@ -611,6 +638,7 @@ code {
 .node-group-panel {
   padding: 15px;
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .node-group-panel h4 {
@@ -1379,13 +1407,17 @@ code {
 @media (min-width: 769px) {
   .sidebar {
     transition: width 0.3s ease, padding 0.3s ease;
-    overflow: hidden;
   }
 
   .sidebar:not(.sidebar-open) {
     width: 0 !important;
     padding: 0 !important;
     border-right: none !important;
+    overflow: hidden;
+  }
+
+  .sidebar.sidebar-open {
+    overflow: hidden;
   }
 }
 
@@ -1470,7 +1502,7 @@ code {
     transition: transform 0.3s ease;
     box-shadow: 4px 0 16px rgba(0, 0, 0, 0.5);
     padding-top: 50px; /* space for the close button */
-    overflow-y: auto;
+    overflow: hidden;
   }
 
   .sidebar.sidebar-open {
