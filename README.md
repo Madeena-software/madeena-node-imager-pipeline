@@ -56,6 +56,9 @@ python app.py
 
 The backend will be available at `http://localhost:5000`
 
+By default, running `python app.py` also auto-starts the frontend dev server (`npm start`) from `../frontend`.
+To disable this behavior, set `AUTO_START_FRONTEND=0` before running.
+
 ### Frontend Setup
 
 1. Navigate to the frontend directory:

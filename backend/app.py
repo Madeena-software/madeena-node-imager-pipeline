@@ -1,11 +1,15 @@
 """Flask application entry point for the Image Processing Pipeline API."""
 
+import atexit
 import logging
 import os
+import shutil
+import signal
+import subprocess
 import uuid
 
 import cv2
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
@@ -50,6 +54,7 @@ os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 # ---------------------------------------------------------------------------
 
 ALLOWED_EXTENSIONS = _config.ALLOWED_EXTENSIONS
+_frontend_process: subprocess.Popen | None = None
 
 
 def _allowed_file(filename: str) -> bool:
@@ -70,6 +75,70 @@ def _find_image(file_id: str, *folders: str) -> str | None:
 def _validate_file_id(file_id: str) -> bool:
     """Basic path-traversal prevention."""
     return bool(file_id) and not any(ch in file_id for ch in ("/", "\\", ".."))
+
+
+def _should_start_frontend() -> bool:
+    """Return True when frontend auto-start is enabled."""
+    value = os.environ.get("AUTO_START_FRONTEND", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _frontend_dir() -> str:
+    """Return absolute path to frontend directory."""
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
+
+
+def _stop_frontend_dev_server() -> None:
+    """Stop frontend dev server process if it is running."""
+    global _frontend_process
+
+    if not _frontend_process or _frontend_process.poll() is not None:
+        return
+
+    logger.info("Stopping frontend dev server (pid=%s)", _frontend_process.pid)
+
+    try:
+        if os.name == "nt":
+            _frontend_process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            _frontend_process.terminate()
+        _frontend_process.wait(timeout=5)
+    except Exception:
+        _frontend_process.kill()
+    finally:
+        _frontend_process = None
+
+
+def _start_frontend_dev_server() -> None:
+    """Start `npm start` from frontend directory for one-command local dev."""
+    global _frontend_process
+
+    if not _should_start_frontend():
+        logger.info(
+            "Frontend auto-start disabled (AUTO_START_FRONTEND=%s)",
+            os.environ.get("AUTO_START_FRONTEND"),
+        )
+        return
+
+    frontend_dir = _frontend_dir()
+    if not os.path.isdir(frontend_dir):
+        logger.warning(
+            "Frontend folder not found, skipping auto-start: %s", frontend_dir
+        )
+        return
+
+    npm_executable = shutil.which("npm.cmd") or shutil.which("npm")
+    if not npm_executable:
+        logger.warning("npm executable not found in PATH, skipping frontend auto-start")
+        return
+
+    popen_kwargs: dict = {"cwd": frontend_dir}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    _frontend_process = subprocess.Popen([npm_executable, "start"], **popen_kwargs)
+    atexit.register(_stop_frontend_dev_server)
+    logger.info("Frontend dev server started (pid=%s)", _frontend_process.pid)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +261,24 @@ def get_preview(file_id):
 
 
 # ---------------------------------------------------------------------------
+# Frontend static files (serve React build)
+# ---------------------------------------------------------------------------
+
+_BUILD_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "build")
+)
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    """Serve React build files or fall back to index.html for client-side routing."""
+    if path and os.path.exists(os.path.join(_BUILD_DIR, path)):
+        return send_from_directory(_BUILD_DIR, path)
+    return send_from_directory(_BUILD_DIR, "index.html")
+
+
+# ---------------------------------------------------------------------------
 # SocketIO events
 # ---------------------------------------------------------------------------
 
@@ -212,9 +299,16 @@ def handle_disconnect():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    if (
+        not app.config.get("DEBUG", False)
+        or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+    ):
+        _start_frontend_dev_server()
+
     socketio.run(
         app,
         debug=app.config.get("DEBUG", False),
+        use_reloader=False,
         host=_config.HOST,
         port=_config.PORT,
     )

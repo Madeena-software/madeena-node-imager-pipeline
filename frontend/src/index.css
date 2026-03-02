@@ -1304,3 +1304,256 @@ code {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
+
+/* ===============================
+   SIDEBAR TOGGLE & CLOSE BUTTONS
+   =============================== */
+.sidebar-toggle {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.sidebar-toggle:hover {
+  background: var(--bg-tertiary);
+}
+
+.sidebar-close {
+  display: none; /* hidden by default on desktop */
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  z-index: 10;
+}
+
+.sidebar-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Overlay behind sidebar on mobile */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 199;
+}
+
+/* ===============================
+   RESPONSIVE: TOOLBAR
+   =============================== */
+
+/* Make toolbar height flexible so it wraps gracefully */
+.toolbar {
+  min-height: 60px;
+  height: auto !important;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+}
+
+/* ===============================
+   DESKTOP SIDEBAR COLLAPSE (> 768px)
+   =============================== */
+@media (min-width: 769px) {
+  .sidebar {
+    transition: width 0.3s ease, padding 0.3s ease;
+    overflow: hidden;
+  }
+
+  .sidebar:not(.sidebar-open) {
+    width: 0 !important;
+    padding: 0 !important;
+    border-right: none !important;
+  }
+}
+
+/* ===============================
+   RESPONSIVE: max-width 1200px
+   =============================== */
+@media (max-width: 1200px) {
+  .image-preview-panel {
+    width: 280px;
+  }
+}
+
+/* ===============================
+   RESPONSIVE: max-width 1024px (Tablet landscape)
+   =============================== */
+@media (max-width: 1024px) {
+  .sidebar {
+    width: 240px;
+  }
+
+  .shortcut-hint {
+    display: none;
+  }
+
+  .image-preview-panel {
+    width: 260px;
+    font-size: 13px;
+  }
+
+  .status-panel {
+    min-width: 200px;
+    max-width: 300px;
+    font-size: 12px;
+  }
+}
+
+/* ===============================
+   RESPONSIVE: max-width 768px (Tablet portrait / large phones)
+   =============================== */
+@media (max-width: 768px) {
+  /* ---- Toolbar ---- */
+  .toolbar {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .toolbar h1 {
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+  }
+
+  .toolbar-section {
+    gap: 6px;
+  }
+
+  .toolbar-divider {
+    height: 24px;
+    margin: 0 4px;
+  }
+
+  .toolbar button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .shortcut-hint {
+    display: none;
+  }
+
+  /* ---- Sidebar (becomes slide-in drawer) ---- */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 280px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.5);
+    padding-top: 50px; /* space for the close button */
+    overflow-y: auto;
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  /* Show overlay when sidebar is open */
+  .sidebar.sidebar-open ~ .sidebar-overlay,
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .sidebar-close {
+    display: flex;
+  }
+
+  /* ---- Flow container fills remaining space ---- */
+  .flow-container {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ---- Status panel ---- */
+  .status-panel {
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    min-width: unset;
+    max-width: unset;
+    width: auto;
+    font-size: 12px;
+  }
+
+  /* ---- Image preview panel (top on mobile to avoid status panel overlap) ---- */
+  .image-preview-panel {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    top: 70px;
+    bottom: auto;
+    max-height: 40vh;
+  }
+
+  /* ---- Modals ---- */
+  .modal,
+  .properties-modal,
+  .shortcuts-panel {
+    width: 96%;
+    max-width: unset;
+    margin: 0 auto;
+  }
+}
+
+/* ===============================
+   RESPONSIVE: max-width 480px (Small phones)
+   =============================== */
+@media (max-width: 480px) {
+  .toolbar h1 {
+    font-size: 13px;
+    max-width: 90px;
+  }
+
+  .toolbar button {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  /* Abbreviate button labels – we keep emoji but shorten text in CSS via text hiding */
+  /* Show only emoji for copy/paste/undo/redo/save buttons */
+  .toolbar-section button .btn-label {
+    display: none;
+  }
+
+  .sidebar {
+    width: 90vw;
+  }
+
+  .image-preview-panel {
+    max-height: 50vh;
+  }
+
+  .status-panel {
+    font-size: 11px;
+    padding: 10px;
+  }
+}
