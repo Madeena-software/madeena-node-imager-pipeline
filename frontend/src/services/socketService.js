@@ -8,8 +8,8 @@ class SocketService {
   }
 
   connect() {
-    // Guard against duplicate connections
-    if (this.socket?.connected) {
+    // Guard against duplicate connections (connected or currently connecting)
+    if (this.socket && (this.socket.connected || this.socket.active)) {
       return;
     }
 

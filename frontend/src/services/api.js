@@ -11,10 +11,7 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message =
-      error.response?.data?.message ||
-      error.response?.data?.error ||
-      error.message;
+    const message = error.response?.data?.message || error.response?.data?.error || error.message;
     console.error(`[API] ${error.config?.method?.toUpperCase()} ${error.config?.url} — ${message}`);
     return Promise.reject(error);
   }
@@ -41,6 +38,9 @@ const apiService = {
 
   /** Build a preview thumbnail URL for a given file_id */
   previewUrl: (fileId) => `${API_BASE_URL}/preview/${fileId}`,
+
+  /** Build an output artifact URL for a given output_id (supports npz and images) */
+  outputUrl: (outputId) => `${API_BASE_URL}/output/${outputId}`,
 };
 
 export default apiService;

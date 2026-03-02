@@ -14,6 +14,7 @@ import cv2
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from app.node_registry import NodeRegistry
@@ -41,7 +42,17 @@ app.config.from_object(_config)
 
 # CORS — restrict in production via CORS_ORIGINS env var
 CORS(app, resources={r"/api/*": {"origins": _config.CORS_ORIGINS}})
-socketio = SocketIO(app, cors_allowed_origins=_config.CORS_ORIGINS)
+socketio_async_mode = os.environ.get("SOCKETIO_ASYNC_MODE")
+if not socketio_async_mode and os.name == "nt":
+    socketio_async_mode = "threading"
+
+socketio_kwargs = {
+    "cors_allowed_origins": _config.CORS_ORIGINS,
+}
+if socketio_async_mode:
+    socketio_kwargs["async_mode"] = socketio_async_mode
+
+socketio = SocketIO(app, **socketio_kwargs)
 
 # Components
 node_registry = NodeRegistry()
@@ -75,9 +86,35 @@ def _find_image(file_id: str, *folders: str) -> str | None:
     return None
 
 
+def _find_output_file(file_id: str) -> str | None:
+    """Find any output file by output_id prefix in OUTPUT_FOLDER."""
+    output_folder = app.config["OUTPUT_FOLDER"]
+    if not os.path.isdir(output_folder):
+        return None
+
+    for entry in os.scandir(output_folder):
+        if not entry.is_file():
+            continue
+        name, _ext = os.path.splitext(entry.name)
+        if name == file_id:
+            return entry.path
+    return None
+
+
 def _validate_file_id(file_id: str) -> bool:
     """Basic path-traversal prevention."""
     return bool(file_id) and not any(ch in file_id for ch in ("/", "\\", ".."))
+
+
+def _format_bytes(byte_count: int) -> str:
+    """Format bytes as a readable string (B/KB/MB/GB)."""
+    value = float(max(0, byte_count))
+    units = ["B", "KB", "MB", "GB"]
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024.0
+        unit_index += 1
+    return f"{value:.1f} {units[unit_index]}"
 
 
 def _cleanup_folder(
@@ -289,6 +326,23 @@ def _start_frontend_dev_server() -> None:
 # ---------------------------------------------------------------------------
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(_error):
+    """Return JSON response when uploaded file exceeds MAX_CONTENT_LENGTH."""
+    max_bytes = int(app.config.get("MAX_CONTENT_LENGTH") or 0)
+    max_human = _format_bytes(max_bytes) if max_bytes else "configured limit"
+    return (
+        jsonify(
+            {
+                "error": f"Uploaded file is too large. Max allowed size is {max_human}.",
+                "message": f"Uploaded file is too large. Max allowed size is {max_human}.",
+                "max_content_length": max_bytes,
+            }
+        ),
+        413,
+    )
+
+
 @app.route("/api/nodes", methods=["GET"])
 def get_available_nodes():
     """Return metadata for every available processing node."""
@@ -403,6 +457,21 @@ def get_preview(file_id):
         return jsonify({"error": "Cannot encode image preview"}), 500
 
     return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png")
+
+
+@app.route("/api/output/<file_id>")
+def get_output_file(file_id):
+    """Serve output artifacts (image or non-image, e.g. .npz) by output_id."""
+    if not _validate_file_id(file_id):
+        return jsonify({"error": "Invalid file ID"}), 400
+
+    filepath = _find_output_file(file_id)
+    if not filepath:
+        return jsonify({"error": "Output file not found"}), 404
+
+    return send_file(
+        filepath, as_attachment=True, download_name=os.path.basename(filepath)
+    )
 
 
 # ---------------------------------------------------------------------------

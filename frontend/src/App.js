@@ -38,6 +38,7 @@ function App() {
   const [availableNodes, setAvailableNodes] = useState([]);
   const [processingStatus, setProcessingStatus] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [showSaveLoadModal, setShowSaveLoadModal] = useState(false);
   const [showPropertiesModal, setShowPropertiesModal] = useState(false);
   const [selectedNodeForProperties, setSelectedNodeForProperties] = useState(null);
@@ -45,6 +46,7 @@ function App() {
   const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
+  const isBusy = isProcessing || isUploading;
 
   const toggleSidebar = () => setSidebarOpen((prev) => !prev);
 
@@ -138,7 +140,6 @@ function App() {
     return () => {
       socketService.off('pipeline_progress', handleProgress);
       socketService.off('pipeline_error', handleError);
-      socketService.disconnect();
     };
   }, [loadAvailableNodes, setProcessingStatus, setIsProcessing]);
 
@@ -225,6 +226,10 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event) => {
+      if (isBusy) {
+        return;
+      }
+
       // Check if user is typing in an input field
       if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
         return;
@@ -295,6 +300,7 @@ function App() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [
+    isBusy,
     nodes,
     edges,
     handleUndo,
@@ -658,27 +664,63 @@ function App() {
       if (response.data.result && response.data.result.output_id) {
         const result = response.data.result;
 
+        const resolveOutputExt = (output) => {
+          const rawExt = (output?.output_ext || '').trim().toLowerCase();
+          if (rawExt) {
+            return rawExt.startsWith('.') ? rawExt : `.${rawExt}`;
+          }
+
+          const outputName = (output?.output_name || '').trim().toLowerCase();
+          if (outputName.includes('.')) {
+            const nameExt = `.${outputName.split('.').pop()}`;
+            if (nameExt && nameExt !== '.') {
+              return nameExt;
+            }
+          }
+
+          if ((output?.output_type || '').toLowerCase() === 'artifact') {
+            return '.npz';
+          }
+          return '.png';
+        };
+
         // Check if there are multiple outputs
         if (result.all_outputs && result.all_outputs.length > 0) {
           // Add status for each output
           result.all_outputs.forEach((output, index) => {
+            const resolvedExt = resolveOutputExt(output);
+            const isNpz = resolvedExt === '.npz';
             setProcessingStatus((prev) => [
               ...prev,
               {
                 status: 'completed',
-                message: `Output ${index + 1} completed successfully`,
+                message: isNpz
+                  ? `Calibration artifact ${index + 1} generated successfully`
+                  : `Output image ${index + 1} completed successfully`,
                 output_id: output.output_id,
+                output_ext: resolvedExt,
+                output_name: output.output_name,
+                output_type: output.output_type || (isNpz ? 'artifact' : 'image'),
               },
             ]);
           });
         } else {
           // Single output
+          const singleOutput =
+            result.all_outputs && result.all_outputs[0] ? result.all_outputs[0] : null;
+          const singleExt = resolveOutputExt(singleOutput);
+          const isNpz = singleExt.toLowerCase() === '.npz';
           setProcessingStatus((prev) => [
             ...prev,
             {
               status: 'completed',
-              message: 'Pipeline completed successfully',
+              message: isNpz
+                ? 'Calibration artifact generated successfully'
+                : 'Pipeline completed successfully',
               output_id: result.output_id,
+              output_ext: singleExt,
+              output_name: singleOutput?.output_name,
+              output_type: singleOutput?.output_type || (isNpz ? 'artifact' : 'image'),
             },
           ]);
         }
@@ -720,19 +762,21 @@ function App() {
         <h1>Image Processing Pipeline</h1>
 
         <div className="toolbar-section">
-          <button onClick={executePipeline} disabled={isProcessing}>
+          <button onClick={executePipeline} disabled={isBusy}>
             {isProcessing ? 'Processing...' : 'Execute Pipeline'}
           </button>
-          <button onClick={clearPipeline}>Clear All</button>
+          <button onClick={clearPipeline} disabled={isBusy}>
+            Clear All
+          </button>
         </div>
 
         <div className="toolbar-divider" />
 
         <div className="toolbar-section">
-          <button onClick={handleUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+          <button onClick={handleUndo} disabled={!canUndo || isBusy} title="Undo (Ctrl+Z)">
             ↶Undo
           </button>
-          <button onClick={handleRedo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+          <button onClick={handleRedo} disabled={!canRedo || isBusy} title="Redo (Ctrl+Shift+Z)">
             ↷Redo
           </button>
         </div>
@@ -740,12 +784,12 @@ function App() {
         <div className="toolbar-divider" />
 
         <div className="toolbar-section">
-          <button onClick={handleCopy} title="Copy selected nodes (Ctrl+C)">
+          <button onClick={handleCopy} title="Copy selected nodes (Ctrl+C)" disabled={isBusy}>
             📋Copy
           </button>
           <button
             onClick={handlePaste}
-            disabled={!clipboardService.hasData()}
+            disabled={!clipboardService.hasData() || isBusy}
             title="Paste nodes (Ctrl+V)"
           >
             📄Paste
@@ -755,13 +799,26 @@ function App() {
         <div className="toolbar-divider" />
 
         <div className="toolbar-section">
-          <button onClick={() => setShowSaveLoadModal(true)} title="Save/Load Pipeline (Ctrl+S)">
+          <button
+            onClick={() => setShowSaveLoadModal(true)}
+            title="Save/Load Pipeline (Ctrl+S)"
+            disabled={isBusy}
+          >
             💾Save/Load
           </button>
-          <button onClick={toggleTheme} className="theme-toggle" title="Toggle Theme">
+          <button
+            onClick={toggleTheme}
+            className="theme-toggle"
+            title="Toggle Theme"
+            disabled={isBusy}
+          >
             {isDarkTheme ? '☀️' : '🌙'}
           </button>
-          <button onClick={() => setShowShortcutsPanel(true)} title="Keyboard Shortcuts (? or F1)">
+          <button
+            onClick={() => setShowShortcutsPanel(true)}
+            title="Keyboard Shortcuts (? or F1)"
+            disabled={isBusy}
+          >
             ⌨️Help
           </button>
         </div>
@@ -781,6 +838,7 @@ function App() {
             onClick={toggleSidebar}
             title="Close sidebar"
             aria-label="Close sidebar"
+            disabled={isBusy}
           >
             ✕
           </button>
@@ -827,6 +885,11 @@ function App() {
             snapToGrid={false}
             snapGrid={[15, 15]}
             elevateEdgesOnSelect={true}
+            nodesDraggable={!isBusy}
+            nodesConnectable={!isBusy}
+            elementsSelectable={!isBusy}
+            panOnDrag={!isBusy}
+            zoomOnScroll={!isBusy}
             fitView
           >
             <Controls />
@@ -856,7 +919,17 @@ function App() {
         node={selectedNodeForProperties}
         onUpdateNode={handleUpdateNodeProperties}
         availableNodes={availableNodes}
+        onUploadingChange={setIsUploading}
       />
+
+      {isBusy && (
+        <div className="app-loading-overlay" role="status" aria-live="polite">
+          <div className="app-loading-content">
+            <div className="loading-spinner" />
+            <span>{isUploading ? 'Uploading image...' : 'Executing pipeline...'}</span>
+          </div>
+        </div>
+      )}
 
       <KeyboardShortcutsPanel
         isOpen={showShortcutsPanel}

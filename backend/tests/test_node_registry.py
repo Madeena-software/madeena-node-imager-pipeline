@@ -29,7 +29,16 @@ class TestNodeRegistry:
         assert "output" in ids, "Output node must be registered"
 
     def test_every_node_has_required_fields(self, registry):
-        required_keys = {"id", "name", "description", "type", "category", "parameters", "inputs", "outputs"}
+        required_keys = {
+            "id",
+            "name",
+            "description",
+            "type",
+            "category",
+            "parameters",
+            "inputs",
+            "outputs",
+        }
         for node in registry.get_all_nodes():
             missing = required_keys - set(node.keys())
             assert not missing, f"Node '{node.get('id')}' missing keys: {missing}"
@@ -45,6 +54,12 @@ class TestNodeRegistry:
         assert proc is not None
         assert proc.name == "Resize"
 
+    def test_calibration_processors_registered(self, registry):
+        calibration_proc = registry.get_processor("camera_calibration")
+        apply_proc = registry.get_processor("apply_camera_calibration")
+        assert calibration_proc is not None
+        assert apply_proc is not None
+
     def test_get_processor_unknown_returns_none(self, registry):
         assert registry.get_processor("nonexistent_xyz") is None
 
@@ -55,13 +70,15 @@ class TestNodeRegistry:
         processor_ids = {n["id"] for n in nodes if n["type"] == "processor"}
         for node in nodes:
             if node["type"] == "processor":
-                assert node["category"] != "Other", (
-                    f"Processor '{node['id']}' has no explicit category (got 'Other')"
-                )
+                assert (
+                    node["category"] != "Other"
+                ), f"Processor '{node['id']}' has no explicit category (got 'Other')"
 
     def test_multi_input_nodes_have_input_slots(self, registry):
         for node in registry.get_all_nodes():
             if node.get("multi_input"):
-                assert "input_slots" in node, f"Multi-input node '{node['id']}' missing input_slots"
+                assert (
+                    "input_slots" in node
+                ), f"Multi-input node '{node['id']}' missing input_slots"
                 assert isinstance(node["input_slots"], list)
                 assert len(node["input_slots"]) >= 2

@@ -30,7 +30,7 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", os.urandom(24).hex())
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
     OUTPUT_FOLDER = os.path.join(BASE_DIR, "outputs")
-    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 16 * 1024 * 1024))
+    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 512 * 1024 * 1024))
 
     # Default crop values (pixels removed from each side)
     CROP_TOP = max(0, _get_env_int("CROP_TOP", 0))

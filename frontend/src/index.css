@@ -314,6 +314,43 @@ code {
   border-left: 3px solid var(--error-color);
 }
 
+.app-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-loading-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.upload-loading-status {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.upload-loading-status .loading-spinner,
+.app-loading-content .loading-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
 /* React Flow Styles */
 .react-flow {
   background-color: var(--bg-primary);

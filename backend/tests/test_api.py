@@ -52,6 +52,7 @@ def _make_png_bytes():
 # GET /api/nodes
 # ---------------------------------------------------------------------------
 
+
 class TestGetNodes:
     def test_returns_list(self, client):
         resp = client.get("/api/nodes")
@@ -71,6 +72,7 @@ class TestGetNodes:
 # POST /api/upload
 # ---------------------------------------------------------------------------
 
+
 class TestUpload:
     def test_upload_png(self, client):
         data = {"file": (io.BytesIO(_make_png_bytes()), "test.png")}
@@ -89,10 +91,27 @@ class TestUpload:
         resp = client.post("/api/upload", data=data, content_type="multipart/form-data")
         assert resp.status_code == 400
 
+    def test_upload_too_large_returns_json_413(self, client, app):
+        original_limit = app.config.get("MAX_CONTENT_LENGTH")
+        try:
+            app.config["MAX_CONTENT_LENGTH"] = 64  # bytes
+            data = {"file": (io.BytesIO(_make_png_bytes()), "test.png")}
+            resp = client.post(
+                "/api/upload", data=data, content_type="multipart/form-data"
+            )
+            assert resp.status_code == 413
+            body = resp.get_json()
+            assert isinstance(body, dict)
+            assert "too large" in body["error"].lower()
+            assert body.get("max_content_length") == 64
+        finally:
+            app.config["MAX_CONTENT_LENGTH"] = original_limit
+
 
 # ---------------------------------------------------------------------------
 # POST /api/execute-pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestExecutePipeline:
     def test_empty_body(self, client):
@@ -134,6 +153,7 @@ class TestExecutePipeline:
 # GET /api/image/<file_id>
 # ---------------------------------------------------------------------------
 
+
 class TestGetImage:
     def test_invalid_id_with_traversal(self, client):
         # file_id containing '..' should be rejected
@@ -153,3 +173,23 @@ class TestGetImage:
         file_id = upload.get_json()["file_id"]
         resp = client.get(f"/api/image/{file_id}")
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# GET /api/output/<file_id>
+# ---------------------------------------------------------------------------
+
+
+class TestGetOutput:
+    def test_not_found(self, client):
+        resp = client.get("/api/output/nonexistent-id")
+        assert resp.status_code == 404
+
+    def test_download_npz_output(self, client, app):
+        output_id = "calib-test"
+        output_path = os.path.join(app.config["OUTPUT_FOLDER"], f"{output_id}.npz")
+        np.savez(output_path, mtx=np.eye(3), dist=np.zeros((1, 5)))
+
+        resp = client.get(f"/api/output/{output_id}")
+        assert resp.status_code == 200
+        assert resp.headers.get("Content-Disposition", "").lower().find(".npz") != -1

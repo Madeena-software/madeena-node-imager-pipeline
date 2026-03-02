@@ -1,31 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../services/api';
 
-const NodePropertiesModal = ({ 
-  isOpen, 
-  onClose, 
-  node, 
+const NodePropertiesModal = ({
+  isOpen,
+  onClose,
+  node,
   onUpdateNode,
-  availableNodes 
+  availableNodes,
+  onUploadingChange,
 }) => {
   const [parameters, setParameters] = useState({});
   const [nodeInfo, setNodeInfo] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (isOpen && node) {
       // Initialize parameters with current values or defaults
       setParameters(node.data.parameters || {});
-      
+
       // Get node definition from available nodes
-      const nodeDefinition = availableNodes.find(n => n.id === node.data.nodeType);
+      const nodeDefinition = availableNodes.find((n) => n.id === node.data.nodeType);
       setNodeInfo(nodeDefinition);
     }
   }, [isOpen, node, availableNodes]);
 
   const handleParameterChange = (paramName, value) => {
-    setParameters(prev => ({
+    setParameters((prev) => ({
       ...prev,
-      [paramName]: value
+      [paramName]: value,
     }));
   };
 
@@ -69,7 +71,7 @@ const NodePropertiesModal = ({
             )}
           </div>
         );
-      
+
       case 'boolean':
         return (
           <div className="parameter-input-group">
@@ -80,13 +82,11 @@ const NodePropertiesModal = ({
                 onChange={(e) => handleParameterChange(paramName, e.target.checked)}
                 className="parameter-checkbox"
               />
-              <span className="checkbox-text">
-                {value ? 'Enabled' : 'Disabled'}
-              </span>
+              <span className="checkbox-text">{value ? 'Enabled' : 'Disabled'}</span>
             </label>
           </div>
         );
-      
+
       case 'select':
         return (
           <div className="parameter-input-group">
@@ -95,7 +95,7 @@ const NodePropertiesModal = ({
               onChange={(e) => handleParameterChange(paramName, e.target.value)}
               className="parameter-input select-input"
             >
-              {paramConfig.options?.map(option => (
+              {paramConfig.options?.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -103,7 +103,7 @@ const NodePropertiesModal = ({
             </select>
           </div>
         );
-      
+
       case 'string':
         return (
           <div className="parameter-input-group">
@@ -116,7 +116,7 @@ const NodePropertiesModal = ({
             />
           </div>
         );
-      
+
       case 'range':
         return (
           <div className="parameter-input-group">
@@ -155,7 +155,7 @@ const NodePropertiesModal = ({
             </div>
           </div>
         );
-      
+
       default:
         return (
           <div className="parameter-input-group">
@@ -177,12 +177,15 @@ const NodePropertiesModal = ({
       <div className="modal properties-modal">
         <div className="modal-header">
           <div className="node-header">
-            <div 
+            <div
               className="node-type-indicator"
               style={{
-                backgroundColor: 
-                  nodeInfo.type === 'input' ? '#4caf50' :
-                  nodeInfo.type === 'output' ? '#f44336' : '#007acc'
+                backgroundColor:
+                  nodeInfo.type === 'input'
+                    ? '#4caf50'
+                    : nodeInfo.type === 'output'
+                      ? '#f44336'
+                      : '#007acc',
               }}
             ></div>
             <div>
@@ -190,7 +193,9 @@ const NodePropertiesModal = ({
               <p className="node-description">{nodeInfo.description}</p>
             </div>
           </div>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose} disabled={isUploading}>
+            ×
+          </button>
         </div>
 
         <div className="modal-content properties-content">
@@ -202,7 +207,8 @@ const NodePropertiesModal = ({
               <strong>Type:</strong> {nodeInfo.type}
             </div>
             <div className="info-item">
-              <strong>Inputs:</strong> {nodeInfo.inputs} | <strong>Outputs:</strong> {nodeInfo.outputs}
+              <strong>Inputs:</strong> {nodeInfo.inputs} | <strong>Outputs:</strong>{' '}
+              {nodeInfo.outputs}
             </div>
           </div>
 
@@ -214,13 +220,11 @@ const NodePropertiesModal = ({
                   <div key={paramName} className="parameter-item">
                     <div className="parameter-header">
                       <label className="parameter-label">
-                        {paramName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        {paramName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                         {paramConfig.required && <span className="required-indicator">*</span>}
                       </label>
                       {paramConfig.description && (
-                        <div className="parameter-description">
-                          {paramConfig.description}
-                        </div>
+                        <div className="parameter-description">{paramConfig.description}</div>
                       )}
                     </div>
                     {renderParameterInput(paramName, paramConfig)}
@@ -241,14 +245,10 @@ const NodePropertiesModal = ({
               {node.data.filename ? (
                 <div className="current-file">
                   <strong>Current file:</strong> {node.data.filename}
-                  <div className="file-info">
-                    File ID: {node.data.file_id}
-                  </div>
+                  <div className="file-info">File ID: {node.data.file_id}</div>
                 </div>
               ) : (
-                <div className="no-file">
-                  No file selected.
-                </div>
+                <div className="no-file">No file selected.</div>
               )}
               <div style={{ marginTop: '10px' }}>
                 <input
@@ -258,6 +258,8 @@ const NodePropertiesModal = ({
                     const file = e.target.files[0];
                     if (!file) return;
                     try {
+                      setIsUploading(true);
+                      if (onUploadingChange) onUploadingChange(true);
                       const response = await api.uploadImage(file);
                       if (onUpdateNode && node) {
                         onUpdateNode(node.id, parameters, {
@@ -265,13 +267,23 @@ const NodePropertiesModal = ({
                           filename: response.data.filename,
                         });
                         // Trigger re-render via fresh nodeInfo reference
-                        setNodeInfo(prev => ({ ...prev }));
+                        setNodeInfo((prev) => ({ ...prev }));
                       }
                     } catch (err) {
                       alert('Image upload failed: ' + (err.response?.data?.error || err.message));
+                    } finally {
+                      setIsUploading(false);
+                      if (onUploadingChange) onUploadingChange(false);
                     }
                   }}
+                  disabled={isUploading}
                 />
+                {isUploading && (
+                  <div className="upload-loading-status">
+                    <span className="loading-spinner" />
+                    <span>Uploading image...</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -279,17 +291,18 @@ const NodePropertiesModal = ({
 
         <div className="modal-footer">
           <div className="button-group">
-            <button 
-              className="reset-button" 
+            <button
+              className="reset-button"
               onClick={handleReset}
+              disabled={isUploading}
               title="Reset to default values"
             >
               Reset to Defaults
             </button>
-            <button className="cancel-button" onClick={onClose}>
+            <button className="cancel-button" onClick={onClose} disabled={isUploading}>
               Cancel
             </button>
-            <button className="save-button" onClick={handleSave}>
+            <button className="save-button" onClick={handleSave} disabled={isUploading}>
               Apply Changes
             </button>
           </div>
