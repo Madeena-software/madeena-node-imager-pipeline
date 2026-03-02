@@ -46,6 +46,7 @@ from app.processors.basic_processors import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def test_image_path(tmp_path):
     """Generate a small colour test image and return its path."""
@@ -75,6 +76,7 @@ def _assert_valid_image(result):
 # Base class
 # ---------------------------------------------------------------------------
 
+
 class TestImageProcessor:
     def test_load_image(self, test_image_path):
         proc = ImageProcessor()
@@ -103,17 +105,22 @@ class TestImageProcessor:
 # Single-input processors
 # ---------------------------------------------------------------------------
 
+
 class TestResizeProcessor:
     def test_resize_default(self, test_image_path):
         result = ResizeProcessor().process(test_image_path)
         _assert_valid_image(result)
 
     def test_resize_custom(self, test_image_path):
-        result = ResizeProcessor().process(test_image_path, width=200, height=100, maintain_aspect=False)
+        result = ResizeProcessor().process(
+            test_image_path, width=200, height=100, maintain_aspect=False
+        )
         assert result.shape[:2] == (100, 200)
 
     def test_resize_maintain_aspect(self, test_image_path):
-        result = ResizeProcessor().process(test_image_path, width=200, height=200, maintain_aspect=True)
+        result = ResizeProcessor().process(
+            test_image_path, width=200, height=200, maintain_aspect=True
+        )
         _assert_valid_image(result)
         h, w = result.shape[:2]
         assert h <= 200 and w <= 200
@@ -171,9 +178,22 @@ class TestRotateProcessor:
 
 class TestCropProcessor:
     def test_crop(self, test_image_path):
-        result = CropProcessor().process(test_image_path, x=10, y=10, width=50, height=50)
+        result = CropProcessor().process(
+            test_image_path, x=10, y=10, width=50, height=50
+        )
         _assert_valid_image(result)
         assert result.shape[:2] == (50, 50)
+
+    def test_crop_from_sides(self, test_image_path):
+        result = CropProcessor().process(
+            test_image_path,
+            top=10,
+            bottom=20,
+            left=15,
+            right=25,
+        )
+        _assert_valid_image(result)
+        assert result.shape[:2] == (90, 120)
 
 
 class TestSharpenProcessor:
@@ -251,6 +271,7 @@ class TestGammaProcessor:
 # ---------------------------------------------------------------------------
 # Multi-input processors (partial — we test process_multi)
 # ---------------------------------------------------------------------------
+
 
 class TestMultiInputProcessors:
     @pytest.fixture()

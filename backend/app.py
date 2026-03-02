@@ -1,11 +1,13 @@
 """Flask application entry point for the Image Processing Pipeline API."""
 
 import atexit
+import io
 import logging
 import os
 import shutil
 import signal
 import subprocess
+import time
 import uuid
 
 import cv2
@@ -55,6 +57,7 @@ os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 
 ALLOWED_EXTENSIONS = _config.ALLOWED_EXTENSIONS
 _frontend_process: subprocess.Popen | None = None
+_last_cleanup_ts: float = 0.0
 
 
 def _allowed_file(filename: str) -> bool:
@@ -75,6 +78,88 @@ def _find_image(file_id: str, *folders: str) -> str | None:
 def _validate_file_id(file_id: str) -> bool:
     """Basic path-traversal prevention."""
     return bool(file_id) and not any(ch in file_id for ch in ("/", "\\", ".."))
+
+
+def _cleanup_folder(
+    folder: str, retention_hours: int, max_files: int
+) -> tuple[int, int]:
+    """Delete files older than retention and enforce max file count in *folder*."""
+    if not os.path.isdir(folder):
+        return (0, 0)
+
+    now = time.time()
+    retention_seconds = max(1, retention_hours) * 3600
+    deleted_by_age = 0
+    deleted_by_count = 0
+    all_files: list[tuple[str, float]] = []
+
+    for entry in os.scandir(folder):
+        if not entry.is_file():
+            continue
+        try:
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
+        all_files.append((entry.path, mtime))
+
+        if now - mtime > retention_seconds:
+            try:
+                os.remove(entry.path)
+                deleted_by_age += 1
+            except OSError:
+                continue
+
+    remaining = [(path, mtime) for path, mtime in all_files if os.path.exists(path)]
+    max_files = max(1, max_files)
+    if len(remaining) > max_files:
+        remaining.sort(key=lambda item: item[1], reverse=True)
+        for old_path, _ in remaining[max_files:]:
+            try:
+                os.remove(old_path)
+                deleted_by_count += 1
+            except OSError:
+                continue
+
+    return (deleted_by_age, deleted_by_count)
+
+
+def _maybe_cleanup_storage(force: bool = False) -> None:
+    """Run periodic cleanup for upload/output folders to limit disk growth."""
+    global _last_cleanup_ts
+
+    if not app.config.get("AUTO_CLEANUP_ENABLED", True):
+        return
+
+    now = time.time()
+    interval_seconds = max(1, app.config.get("CLEANUP_INTERVAL_SECONDS", 60))
+    if not force and now - _last_cleanup_ts < interval_seconds:
+        return
+
+    upload_age, upload_count = _cleanup_folder(
+        app.config["UPLOAD_FOLDER"],
+        app.config.get("UPLOAD_RETENTION_HOURS", 24),
+        app.config.get("UPLOAD_MAX_FILES", 1000),
+    )
+    output_age, output_count = _cleanup_folder(
+        app.config["OUTPUT_FOLDER"],
+        app.config.get("OUTPUT_RETENTION_HOURS", 24),
+        app.config.get("OUTPUT_MAX_FILES", 2000),
+    )
+
+    _last_cleanup_ts = now
+    deleted_total = upload_age + upload_count + output_age + output_count
+    if deleted_total:
+        logger.info(
+            "Storage cleanup removed %d file(s): uploads(age=%d,count=%d), outputs(age=%d,count=%d)",
+            deleted_total,
+            upload_age,
+            upload_count,
+            output_age,
+            output_count,
+        )
+
+
+_maybe_cleanup_storage(force=True)
 
 
 def _should_start_frontend() -> bool:
@@ -236,6 +321,7 @@ def upload_image():
     new_filename = f"{file_id}.{extension}"
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], new_filename)
     file.save(filepath)
+    _maybe_cleanup_storage()
 
     logger.info("Uploaded %s as %s", filename, file_id)
     return jsonify({"file_id": file_id, "filename": filename, "filepath": filepath})
@@ -258,6 +344,7 @@ def execute_pipeline():
 
     try:
         result = pipeline_executor.execute(nodes, edges)
+        _maybe_cleanup_storage()
         return jsonify({"status": "success", "result": result})
     except Exception as exc:
         logger.error("Pipeline execution failed: %s", exc, exc_info=True)
@@ -280,11 +367,9 @@ def get_image(file_id):
     if filepath.lower().endswith((".tiff", ".tif")):
         image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
         if image is not None:
-            temp_png = os.path.join(
-                app.config["OUTPUT_FOLDER"], f"{file_id}_display.png"
-            )
-            cv2.imwrite(temp_png, image)
-            return send_file(temp_png, mimetype="image/png")
+            success, encoded = cv2.imencode(".png", image)
+            if success:
+                return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png")
 
     return send_file(filepath)
 
@@ -313,9 +398,11 @@ def get_preview(file_id):
             image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA
         )
 
-    temp_path = os.path.join(app.config["OUTPUT_FOLDER"], f"thumb_{file_id}.png")
-    cv2.imwrite(temp_path, image)
-    return send_file(temp_path, mimetype="image/png")
+    success, encoded = cv2.imencode(".png", image)
+    if not success:
+        return jsonify({"error": "Cannot encode image preview"}), 500
+
+    return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png")
 
 
 # ---------------------------------------------------------------------------

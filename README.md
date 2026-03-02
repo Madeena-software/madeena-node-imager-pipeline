@@ -62,6 +62,31 @@ To disable this behavior, set `AUTO_START_FRONTEND=0` before running.
 When backend and frontend are run as one app, backend now checks `frontend/build/index.html` on startup.
 If the build is missing, it will try `npm run build` automatically (disable with `AUTO_BUILD_FRONTEND=0`).
 
+### Backend Environment Options
+
+Add these in `backend/.env`:
+
+```dotenv
+# Image cropping parameters (pixels to crop from each side)
+CROP_TOP=0
+CROP_BOTTOM=0
+CROP_LEFT=0
+CROP_RIGHT=0
+
+# Storage cleanup (prevents uploads/outputs from growing forever)
+AUTO_CLEANUP_ENABLED=1
+CLEANUP_INTERVAL_SECONDS=60
+UPLOAD_RETENTION_HOURS=24
+OUTPUT_RETENTION_HOURS=24
+UPLOAD_MAX_FILES=1000
+OUTPUT_MAX_FILES=2000
+```
+
+How it works:
+- Crop node defaults use `CROP_TOP/BOTTOM/LEFT/RIGHT`.
+- `GET /api/preview/<file_id>` and TIFF display no longer create temp files on disk.
+- Cleanup runs periodically and removes old files + enforces max file counts in `backend/uploads` and `backend/outputs`.
+
 ### Frontend Setup
 
 1. Navigate to the frontend directory:

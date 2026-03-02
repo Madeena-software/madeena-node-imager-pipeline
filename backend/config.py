@@ -8,6 +8,22 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _get_env_int(name: str, default: int) -> int:
+    """Read integer env var with fallback."""
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_env_bool(name: str, default: bool) -> bool:
+    """Read boolean env var with fallback."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Config:
     """Base configuration."""
 
@@ -15,6 +31,20 @@ class Config:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
     OUTPUT_FOLDER = os.path.join(BASE_DIR, "outputs")
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 16 * 1024 * 1024))
+
+    # Default crop values (pixels removed from each side)
+    CROP_TOP = max(0, _get_env_int("CROP_TOP", 0))
+    CROP_BOTTOM = max(0, _get_env_int("CROP_BOTTOM", 0))
+    CROP_LEFT = max(0, _get_env_int("CROP_LEFT", 0))
+    CROP_RIGHT = max(0, _get_env_int("CROP_RIGHT", 0))
+
+    # Storage cleanup policy
+    AUTO_CLEANUP_ENABLED = _get_env_bool("AUTO_CLEANUP_ENABLED", True)
+    CLEANUP_INTERVAL_SECONDS = max(1, _get_env_int("CLEANUP_INTERVAL_SECONDS", 60))
+    UPLOAD_RETENTION_HOURS = max(1, _get_env_int("UPLOAD_RETENTION_HOURS", 24))
+    OUTPUT_RETENTION_HOURS = max(1, _get_env_int("OUTPUT_RETENTION_HOURS", 24))
+    UPLOAD_MAX_FILES = max(1, _get_env_int("UPLOAD_MAX_FILES", 1000))
+    OUTPUT_MAX_FILES = max(1, _get_env_int("OUTPUT_MAX_FILES", 2000))
 
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 
