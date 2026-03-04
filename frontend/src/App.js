@@ -12,11 +12,11 @@ import 'reactflow/dist/style.css';
 
 import CustomEdge from './components/CustomEdge';
 import CustomNode from './components/CustomNode';
-import ImagePreviewPanel from './components/ImagePreviewPanel';
 import KeyboardShortcutsPanel from './components/KeyboardShortcutsPanel';
 import NodeGroupPanel from './components/NodeGroupPanel';
 import NodePalette from './components/NodePalette';
 import NodePropertiesModal from './components/NodePropertiesModal';
+import OutputPreviewPanel from './components/OutputPreviewPanel';
 import SaveLoadModal from './components/SaveLoadModal';
 import StatusPanel from './components/StatusPanel';
 import useUndoRedo from './hooks/useUndoRedo';
@@ -900,7 +900,7 @@ function App() {
 
       <StatusPanel status={processingStatus} />
 
-      <ImagePreviewPanel nodes={nodes} processingStatus={processingStatus} />
+      <OutputPreviewPanel nodes={nodes} processingStatus={processingStatus} />
 
       <SaveLoadModal
         isOpen={showSaveLoadModal}
