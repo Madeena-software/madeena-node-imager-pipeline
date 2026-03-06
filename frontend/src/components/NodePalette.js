@@ -1,16 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 const NodePalette = ({ nodes }) => {
-  const [expandedCategories, setExpandedCategories] = useState({
-    'Basic': true,
-    'Transform': true,
-    'Color': true,
-    'Filter': true,
-    'Enhancement': true,
-    'Morphological': true,
-    'Detection': true,
-    'Pipeline': true,
-  });
+  const [expandedCategories, setExpandedCategories] = useState({});
 
   const onDragStart = (event, nodeType, nodeData) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -19,9 +10,9 @@ const NodePalette = ({ nodes }) => {
   };
 
   const toggleCategory = (category) => {
-    setExpandedCategories(prev => ({
+    setExpandedCategories((prev) => ({
       ...prev,
-      [category]: !prev[category]
+      [category]: !prev[category],
     }));
   };
 
@@ -36,7 +27,18 @@ const NodePalette = ({ nodes }) => {
   }, {});
 
   // Sort categories
-  const categoryOrder = ['Basic', 'Transform', 'Color', 'Filter', 'Enhancement', 'Pipeline', 'Math', 'Morphological', 'Detection', 'Other'];
+  const categoryOrder = [
+    'Basic',
+    'Transform',
+    'Color',
+    'Filter',
+    'Enhancement',
+    'Pipeline',
+    'Math',
+    'Morphological',
+    'Detection',
+    'Other',
+  ];
   const sortedCategories = Object.keys(groupedNodes).sort((a, b) => {
     const indexA = categoryOrder.indexOf(a);
     const indexB = categoryOrder.indexOf(b);
@@ -48,20 +50,15 @@ const NodePalette = ({ nodes }) => {
   return (
     <div className="node-palette">
       <h3>Available Nodes</h3>
-      
+
       {sortedCategories.map((category) => (
         <div key={category} className="node-category-group">
-          <div 
-            className="category-header"
-            onClick={() => toggleCategory(category)}
-          >
-            <span className="category-icon">
-              {expandedCategories[category] ? '▼' : '▶'}
-            </span>
+          <div className="category-header" onClick={() => toggleCategory(category)}>
+            <span className="category-icon">{expandedCategories[category] ? '▼' : '▶'}</span>
             <span className="category-name">{category}</span>
             <span className="category-count">({groupedNodes[category].length})</span>
           </div>
-          
+
           {expandedCategories[category] && (
             <div className="category-items">
               {groupedNodes[category].map((node) => (
