@@ -142,7 +142,6 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
                         e.target.style.display = 'none';
                       }}
                     />
-                  ) : isNpz ? (
                   ) : !isImage ? (
                     <div className="npz-preview-content">
                       <div className="npz-icon-area">{item.ext === '.dcm' ? '🩻' : '📊'}</div>
