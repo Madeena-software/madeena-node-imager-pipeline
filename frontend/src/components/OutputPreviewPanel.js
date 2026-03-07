@@ -2,25 +2,28 @@ import { useEffect, useRef, useState } from 'react';
 import api from '../services/api';
 
 const OutputPreviewPanel = ({ nodes, processingStatus }) => {
-  const [inputImageId, setInputImageId] = useState(null);
+  const [inputImageIds, setInputImageIds] = useState([]);
   const [outputImageIds, setOutputImageIds] = useState([]);
   const [expandedItems, setExpandedItems] = useState(new Set());
   const timestampRef = useRef(Date.now());
   const inputKeyRef = useRef('');
   const outputKeyRef = useRef('');
 
-  // Get input image from nodes
+  // Get input images from nodes
   useEffect(() => {
-    const inputNode = nodes.find((node) => node.data.nodeType === 'input');
-    if (inputNode?.data?.file_id) {
-      setInputImageId(inputNode.data.file_id);
-      if (inputKeyRef.current !== inputNode.data.file_id) {
-        inputKeyRef.current = inputNode.data.file_id;
+    const inputNodes = nodes.filter((node) => node.data.nodeType === 'input' && node.data.file_id);
+    const newImageIds = inputNodes.map((node) => ({
+      id: node.data.file_id,
+      filename: node.data.filename || 'Input Image',
+    }));
+    const newIdsKey = newImageIds.map((img) => img.id).join(',');
+
+    if (inputKeyRef.current !== newIdsKey) {
+      inputKeyRef.current = newIdsKey;
+      setInputImageIds(newImageIds);
+      if (newImageIds.length) {
         timestampRef.current = Date.now();
       }
-    } else {
-      inputKeyRef.current = '';
-      setInputImageId(null);
     }
   }, [nodes]);
 
@@ -40,12 +43,6 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
       outputKeyRef.current = outputKey;
       if (outputs.length) {
         timestampRef.current = Date.now();
-        // Auto-expand newly added outputs
-        setExpandedItems((prev) => {
-          const next = new Set(prev);
-          outputs.forEach((o) => next.add(o.output_id));
-          return next;
-        });
       }
     }
   }, [processingStatus]);
@@ -59,7 +56,7 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
     });
   };
 
-  if (!inputImageId && outputImageIds.length === 0) {
+  if (inputImageIds.length === 0 && outputImageIds.length === 0) {
     return null;
   }
 
@@ -67,7 +64,14 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
 
   // Build unified list
   const allItems = [
-    ...(inputImageId ? [{ type: 'input', id: 'input', label: 'Input Image', ext: null }] : []),
+    ...inputImageIds.map((img, i) => ({
+      type: 'input',
+      id: `input-${img.id}`,
+      label: img.filename,
+      file_id: img.id,
+      ext: null,
+      index: i,
+    })),
     ...outputImageIds.map((o, i) => ({
       type: o.output_ext === '.npz' ? 'artifact' : 'image',
       id: o.output_id,
@@ -115,9 +119,9 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
                 <div className="output-list-content">
                   {isInput ? (
                     <img
-                      key={inputImageId}
-                      src={`${api.imageUrl(inputImageId)}?t=${t}`}
-                      alt="Input"
+                      key={item.file_id}
+                      src={`${api.imageUrl(item.file_id)}?t=${t}`}
+                      alt={item.label}
                       className="output-preview-img"
                       onError={(e) => {
                         e.target.style.display = 'none';

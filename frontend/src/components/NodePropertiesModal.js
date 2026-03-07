@@ -250,41 +250,6 @@ const NodePropertiesModal = ({
               ) : (
                 <div className="no-file">No file selected.</div>
               )}
-              <div style={{ marginTop: '10px' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    try {
-                      setIsUploading(true);
-                      if (onUploadingChange) onUploadingChange(true);
-                      const response = await api.uploadImage(file);
-                      if (onUpdateNode && node) {
-                        onUpdateNode(node.id, parameters, {
-                          file_id: response.data.file_id,
-                          filename: response.data.filename,
-                        });
-                        // Trigger re-render via fresh nodeInfo reference
-                        setNodeInfo((prev) => ({ ...prev }));
-                      }
-                    } catch (err) {
-                      alert('Image upload failed: ' + (err.response?.data?.error || err.message));
-                    } finally {
-                      setIsUploading(false);
-                      if (onUploadingChange) onUploadingChange(false);
-                    }
-                  }}
-                  disabled={isUploading}
-                />
-                {isUploading && (
-                  <div className="upload-loading-status">
-                    <span className="loading-spinner" />
-                    <span>Uploading image...</span>
-                  </div>
-                )}
-              </div>
             </div>
           )}
         </div>

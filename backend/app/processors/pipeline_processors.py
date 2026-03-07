@@ -88,8 +88,7 @@ class WaveletDenoiseProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         wavelet = kwargs.get("wavelet", "sym4")
         level = int(kwargs.get("level", 3))
         method = kwargs.get("method", "BayesShrink")
@@ -157,9 +156,9 @@ class PipelineFlatFieldCorrectionProcessor(ImageProcessor):
 
         return corrected
 
-    def process(self, image_path, **kwargs):
+    def process(self, image, **kwargs):
         """Single input mode - just return the image"""
-        return self.load_image(image_path)
+        return image
 
 
 # =============================================================================
@@ -196,8 +195,7 @@ class ImageJEnhanceContrastProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         saturated_pixels = float(kwargs.get("saturated_pixels", 0.35))
         normalize = kwargs.get("normalize", True)
         equalize = kwargs.get("equalize", False)
@@ -269,8 +267,7 @@ class ImageJCLAHEProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         blocksize = int(kwargs.get("blocksize", 127))
         histogram_bins = int(kwargs.get("histogram_bins", 256))
         max_slope = float(kwargs.get("max_slope", 3.0))
@@ -321,8 +318,7 @@ class ImageJMedianFilterProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         radius = float(kwargs.get("radius", 5.0))
 
         # Convert to grayscale
@@ -366,8 +362,7 @@ class ImageJHybridMedianFilterProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
         repetitions = int(kwargs.get("repetitions", 1))
 
@@ -414,8 +409,7 @@ class AutoThresholdProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         method = kwargs.get("method", "auto")
 
         # Convert to grayscale float32 [0,1]
@@ -462,8 +456,7 @@ class PipelineInvertProcessor(ImageProcessor):
         )
         self.parameters = {}
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
 
         # Convert to float32 for pipeline invert
         if image.dtype == np.uint8:
@@ -498,8 +491,7 @@ class ImageJNormalizeProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         saturated_pixels = float(kwargs.get("saturated_pixels", 0.35))
 
         # Convert to grayscale
@@ -552,8 +544,7 @@ class WaveletBackgroundRemovalProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         wavelet = kwargs.get("wavelet", "db4")
         level = int(kwargs.get("level", 2))
 
@@ -606,8 +597,7 @@ class AdvancedMedianFilterProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         filter_type = kwargs.get("filter_type", "hybrid_imagej")
         radius = int(kwargs.get("radius", 2))
 
@@ -713,29 +703,7 @@ class CameraCalibrationProcessor(ImageProcessor):
             },
         }
 
-    def _resolve_output_path(self, outputs_folder, output_filename):
-        filename = (output_filename or "camera_calibration.npz").strip()
-        if not filename:
-            filename = "camera_calibration.npz"
-        if not filename.lower().endswith(".npz"):
-            filename = f"{filename}.npz"
-
-        if os.path.isabs(filename):
-            return filename
-
-        candidate = os.path.join(outputs_folder, filename)
-        if not os.path.exists(candidate):
-            return candidate
-
-        stem, ext = os.path.splitext(filename)
-        unique_name = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
-        return os.path.join(outputs_folder, unique_name)
-
-    def process(self, image_path, **kwargs):
-        outputs_folder = kwargs.get("_outputs_folder")
-        if not outputs_folder:
-            raise ValueError("Missing output folder context for calibration node")
-
+    def process(self, image, **kwargs):
         pattern_cols = int(kwargs.get("pattern_cols", 44))
         pattern_rows = int(kwargs.get("pattern_rows", 35))
         circle_diameter = float(kwargs.get("circle_diameter", 1.0))
@@ -750,42 +718,19 @@ class CameraCalibrationProcessor(ImageProcessor):
             else None
         )
 
-        output_path = self._resolve_output_path(
-            outputs_folder,
-            kwargs.get("output_filename", "camera_calibration.npz"),
-        )
-
         calibrator = CameraCalibrator(
             pattern_size=(pattern_cols, pattern_rows),
             circle_diameter=circle_diameter,
         )
 
-        success = calibrator.calibrate_from_image(
-            image_path, output_path, roi_crop=custom_roi
+        calibration_data = calibrator.calibrate_from_image_in_memory(
+            image, roi_crop=custom_roi
         )
-        if not success:
-            raise ValueError("Camera calibration failed; could not generate .npz")
 
-        if kwargs.get("run_test", False):
-            test_output_filename = (
-                kwargs.get("test_output_filename", "") or ""
-            ).strip()
-            if test_output_filename:
-                if not os.path.isabs(test_output_filename):
-                    test_output_path = os.path.join(
-                        outputs_folder, test_output_filename
-                    )
-                else:
-                    test_output_path = test_output_filename
-            else:
-                base_name = os.path.splitext(os.path.basename(output_path))[0]
-                test_output_path = os.path.join(
-                    outputs_folder, f"{base_name}_test_undistorted.tiff"
-                )
+        if not calibration_data:
+            raise ValueError("Camera calibration failed; could not generate artifact")
 
-            calibrator.test_calibration(image_path, output_path, test_output_path)
-
-        return {"artifact_path": output_path}
+        return {"artifact": calibration_data}
 
 
 # =============================================================================
@@ -813,26 +758,23 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
         }
         self.multi_input = True
         self.input_slots = ["image", "calibration_npz"]
-        self.raw_input_slots = ["calibration_npz"]
 
     def process_multi(self, images_dict, **kwargs):
         image = images_dict.get("image")
-        calibration_npz = images_dict.get("calibration_npz")
+        calibration_data = images_dict.get("calibration_npz")
 
         if image is None:
             raise ValueError("Apply Camera Calibration requires 'image' input")
-        if not calibration_npz:
+        if calibration_data is None:
             raise ValueError(
                 "Apply Camera Calibration requires 'calibration_npz' input"
             )
-        if not os.path.exists(calibration_npz):
-            raise ValueError(f"Calibration NPZ not found: {calibration_npz}")
 
         alpha = float(kwargs.get("alpha", 0.0))
         crop_to_roi = bool(kwargs.get("crop_to_roi", True))
         result = undistort_image(
             image,
-            calibration_npz,
+            calibration_data,
             alpha=alpha,
             crop_to_roi=crop_to_roi,
         )
@@ -841,5 +783,5 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
             result = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image

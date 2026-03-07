@@ -37,8 +37,7 @@ class ResizeProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
 
         width = kwargs.get("width", 800)
         height = kwargs.get("height", 600)
@@ -99,12 +98,11 @@ class BlurProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
 
         # Additional safety check
         if image is None or image.size == 0:
-            raise ValueError(f"Invalid or empty image loaded from: {image_path}")
+            raise ValueError(f"Invalid or empty image provided.")
 
         kernel_size = kwargs.get("kernel_size", 15)
         # Ensure kernel size is odd
@@ -141,8 +139,7 @@ class BrightnessProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
 
         brightness = kwargs.get("brightness", 0)
         contrast = kwargs.get("contrast", 1.0)
@@ -185,8 +182,7 @@ class EdgeDetectionProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
 
         low_threshold = kwargs.get("low_threshold", 50)
         high_threshold = kwargs.get("high_threshold", 150)
@@ -239,8 +235,7 @@ class RotateProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         angle = kwargs.get("angle", 0)
         scale = kwargs.get("scale", 1.0)
         keep_size = kwargs.get("keep_size", False)
@@ -283,8 +278,7 @@ class FlipProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         direction = kwargs.get("direction", "horizontal")
 
         if direction == "horizontal":
@@ -345,8 +339,7 @@ class CropProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
 
         h, w = image.shape[:2]
 
@@ -385,8 +378,7 @@ class GrayscaleProcessor(ImageProcessor):
         self.description = "Convert image to grayscale"
         self.parameters = {}
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         # Convert back to 3-channel for consistency
         return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
@@ -407,8 +399,7 @@ class SepiaProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         intensity = kwargs.get("intensity", 100) / 100.0
 
         # Sepia transformation matrix
@@ -431,8 +422,7 @@ class InvertProcessor(ImageProcessor):
         self.description = "Invert image colors (negative)"
         self.parameters = {}
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         inverted = cv2.bitwise_not(image)
         return inverted
 
@@ -453,8 +443,7 @@ class SharpenProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         strength = kwargs.get("strength", 1.0)
 
         # Create sharpening kernel
@@ -490,8 +479,7 @@ class ErodeProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = kwargs.get("kernel_size", 5)
         iterations = kwargs.get("iterations", 1)
 
@@ -527,8 +515,7 @@ class DilateProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = kwargs.get("kernel_size", 5)
         iterations = kwargs.get("iterations", 1)
 
@@ -563,8 +550,7 @@ class HistogramEqualizationProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         method = kwargs.get("method", "standard")
         clip_limit = kwargs.get("clip_limit", 2.0)
 
@@ -607,8 +593,7 @@ class DenoiseProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         strength = kwargs.get("strength", 10)
         method = kwargs.get("method", "fast")
 
@@ -645,8 +630,7 @@ class ThresholdProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         threshold_value = kwargs.get("threshold_value", 127)
         method = kwargs.get("method", "binary")
 
@@ -693,8 +677,7 @@ class ConvolutionProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_str = kwargs.get("kernel", "0,-1,0;-1,5,-1;0,-1,0")
         normalize = kwargs.get("normalize", False)
         scale = kwargs.get("scale", 1.0)
@@ -751,8 +734,7 @@ class MedianFilterProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
 
         # Ensure kernel size is odd
@@ -777,8 +759,7 @@ class MeanFilterProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
 
         return cv2.blur(image, (kernel_size, kernel_size))
@@ -799,8 +780,7 @@ class MaximumFilterProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
 
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
@@ -822,8 +802,7 @@ class MinimumFilterProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
 
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
@@ -859,8 +838,7 @@ class UnsharpMaskProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         amount = kwargs.get("amount", 1.5)
         radius = kwargs.get("radius", 1.0)
         threshold = kwargs.get("threshold", 0)
@@ -895,8 +873,7 @@ class VarianceFilterProcessor(ImageProcessor):
             }
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
 
         # Convert to grayscale for variance calculation
@@ -937,8 +914,7 @@ class TopHatProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 9))
         operation = kwargs.get("operation", "white")
 
@@ -978,8 +954,7 @@ class GaussianBlurProcessor(ImageProcessor):
             },
         }
 
-    def process(self, image_path, **kwargs):
-        image = self.load_image(image_path)
+    def process(self, image, **kwargs):
         kernel_size = int(kwargs.get("kernel_size", 5))
         sigma = kwargs.get("sigma", 0)
 
@@ -1046,9 +1021,9 @@ class FlatFieldCorrectionProcessor(ImageProcessor):
 
         return corrected
 
-    def process(self, image_path, **kwargs):
+    def process(self, image, **kwargs):
         """Single input mode - just return the image"""
-        return self.load_image(image_path)
+        return image
 
 
 # =============================================================================
@@ -1088,8 +1063,8 @@ class AddProcessor(ImageProcessor):
         result = result * weight
         return np.clip(result, 0, 255).astype(np.uint8)
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class SubtractProcessor(ImageProcessor):
@@ -1123,8 +1098,8 @@ class SubtractProcessor(ImageProcessor):
 
         return np.clip(result, 0, 255).astype(np.uint8)
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class MultiplyProcessor(ImageProcessor):
@@ -1161,8 +1136,8 @@ class MultiplyProcessor(ImageProcessor):
 
         return np.clip(result, 0, 255).astype(np.uint8)
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class DivideProcessor(ImageProcessor):
@@ -1204,8 +1179,8 @@ class DivideProcessor(ImageProcessor):
 
         return np.clip(result, 0, 255).astype(np.uint8)
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class AndProcessor(ImageProcessor):
@@ -1227,8 +1202,8 @@ class AndProcessor(ImageProcessor):
         result = cv2.bitwise_and(image1, image2)
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class OrProcessor(ImageProcessor):
@@ -1250,8 +1225,8 @@ class OrProcessor(ImageProcessor):
         result = cv2.bitwise_or(image1, image2)
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class XorProcessor(ImageProcessor):
@@ -1273,8 +1248,8 @@ class XorProcessor(ImageProcessor):
         result = cv2.bitwise_xor(image1, image2)
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class MinProcessor(ImageProcessor):
@@ -1298,8 +1273,8 @@ class MinProcessor(ImageProcessor):
 
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class MaxProcessor(ImageProcessor):
@@ -1323,8 +1298,8 @@ class MaxProcessor(ImageProcessor):
 
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image
 
 
 class GammaProcessor(ImageProcessor):
@@ -1374,5 +1349,5 @@ class GammaProcessor(ImageProcessor):
 
         return result
 
-    def process(self, image_path, **kwargs):
-        return self.load_image(image_path)
+    def process(self, image, **kwargs):
+        return image

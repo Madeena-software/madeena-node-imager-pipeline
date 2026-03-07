@@ -6,8 +6,10 @@ import logging
 import shutil
 
 import cv2
+import numpy as np
 
 from app.node_registry import NodeRegistry
+from app.in_memory_storage import storage
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +20,8 @@ class PipelineExecutor:
     def __init__(self, socketio=None, node_registry=None):
         self.socketio = socketio
         self.node_registry = node_registry or NodeRegistry()
-        # Get the base directory (backend folder)
-        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    def execute(self, nodes, edges):
+    def execute(self, nodes, edges, session_id):
         """Execute a pipeline of connected nodes"""
         try:
             # Build execution graph
@@ -31,8 +31,6 @@ class PipelineExecutor:
             source_input_nodes = [node for node in nodes if node["type"] == "input"]
             if not source_input_nodes:
                 raise ValueError("No input node found in pipeline")
-
-            uploads_folder = os.path.join(self.base_dir, "uploads")
 
             # Track processed images for each node
             node_outputs = {}
@@ -46,31 +44,19 @@ class PipelineExecutor:
                     )
                     continue
 
-                input_path = self._find_image_file(file_id, uploads_folder)
-                if not input_path:
+                image = storage.get(session_id, file_id)
+                if image is None:
                     logger.warning(
                         f"Input image not found for node {input_node['id']}: {file_id}"
                     )
                     continue
-
+                
                 logger.info(
-                    f"Found input image for node {input_node['id']} at: {input_path}"
+                    f"Input image loaded for node {input_node['id']}, shape: {image.shape}"
                 )
 
-                # Verify the image can be loaded
-                test_image = cv2.imread(input_path)
-                if test_image is None:
-                    logger.warning(
-                        f"Cannot load input image for node {input_node['id']}: {input_path}"
-                    )
-                    continue
-
-                logger.info(
-                    f"Input image loaded for node {input_node['id']}, shape: {test_image.shape}"
-                )
-
-                # Store the image path for this input node
-                node_outputs[input_node["id"]] = input_path
+                # Store the image for this input node
+                node_outputs[input_node["id"]] = image
 
             # Verify we have at least one valid input
             if not node_outputs:
@@ -101,41 +87,24 @@ class PipelineExecutor:
                     if not output_source_ids:
                         raise ValueError(f"Output node {node['id']} has no input")
 
-                    source_image_path = node_outputs.get(output_source_ids[0])
-                    if not source_image_path:
+                    source_image = node_outputs.get(output_source_ids[0])
+                    if source_image is None:
                         raise ValueError(
                             f"No image available from source node {output_source_ids[0]}"
                         )
 
-                    # Save final result
+                    # Save final result to in-memory storage
                     output_id = str(uuid.uuid4())
-                    outputs_folder = os.path.join(self.base_dir, "outputs")
-                    source_ext = os.path.splitext(source_image_path)[1].lower()
-
-                    if source_ext == ".npz":
-                        output_path = os.path.join(outputs_folder, f"{output_id}.npz")
-                        shutil.copy2(source_image_path, output_path)
-                    else:
-                        output_format = node["data"].get("format", "png")
-                        output_path = os.path.join(
-                            outputs_folder, f"{output_id}.{output_format}"
-                        )
-                        image = cv2.imread(source_image_path)
-                        if image is None:
-                            raise ValueError(
-                                f"Cannot load output image from source: {source_image_path}"
-                            )
-                        cv2.imwrite(output_path, image)
+                    storage.put(session_id, output_id, source_image)
+                    
+                    output_ext = ".npz" if isinstance(source_image, dict) else ".png"
 
                     output_results.append(
                         {
                             "output_id": output_id,
-                            "output_path": output_path,
-                            "output_ext": os.path.splitext(output_path)[1].lower(),
-                            "output_name": os.path.basename(output_path),
-                            "output_type": (
-                                "artifact" if source_ext == ".npz" else "image"
-                            ),
+                            "output_ext": output_ext,
+                            "output_name": f"{output_id}{output_ext}",
+                            "output_type": "artifact" if output_ext == ".npz" else "image",
                             "node_id": node["id"],
                         }
                     )
@@ -165,8 +134,6 @@ class PipelineExecutor:
 
                     logger.info(f"Processing node {node['id']} with {processor.name}")
                     processor_kwargs = dict(node["data"])
-                    outputs_folder = os.path.join(self.base_dir, "outputs")
-                    processor_kwargs["_outputs_folder"] = outputs_folder
 
                     # Check if processor supports multiple inputs
                     if hasattr(processor, "multi_input") and processor.multi_input:
@@ -182,27 +149,12 @@ class PipelineExecutor:
 
                         # Iterate through the slot mapping
                         for slot_name, source_node_id in input_mapping.items():
-                            source_image_path = node_outputs.get(source_node_id)
-                            if source_image_path:
-                                raw_input_slots = set(
-                                    getattr(processor, "raw_input_slots", [])
+                            source_image = node_outputs.get(source_node_id)
+                            if source_image is not None:
+                                images_dict[slot_name] = source_image
+                                logger.debug(
+                                    f"  Mapped slot '{slot_name}' from node {source_node_id}"
                                 )
-                                if slot_name in raw_input_slots:
-                                    images_dict[slot_name] = source_image_path
-                                    logger.debug(
-                                        f"  Mapped raw slot '{slot_name}' from node {source_node_id}"
-                                    )
-                                else:
-                                    img = cv2.imread(source_image_path)
-                                    if img is not None:
-                                        images_dict[slot_name] = img
-                                        logger.debug(
-                                            f"  Mapped slot '{slot_name}' from node {source_node_id}"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"  Could not load image for slot '{slot_name}' from {source_image_path}"
-                                        )
                             else:
                                 logger.warning(
                                     f"  No output found for slot '{slot_name}' from node {source_node_id}"
@@ -251,52 +203,29 @@ class PipelineExecutor:
 
                     else:
                         # Single input processor (existing behavior)
-                        source_image_path = node_outputs.get(upstream_ids[0])
-                        if not source_image_path:
+                        source_image = node_outputs.get(upstream_ids[0])
+                        if source_image is None:
                             raise ValueError(
                                 f"No image available from source node {upstream_ids[0]}"
                             )
 
-                        logger.debug(f"Input image path: {source_image_path}")
-
-                        # Verify source image exists and is loadable
-                        if not os.path.exists(source_image_path):
-                            raise FileNotFoundError(
-                                f"Image file not found: {source_image_path}"
-                            )
-
-                        test_img = cv2.imread(source_image_path)
-                        if test_img is None:
-                            raise ValueError(
-                                f"Cannot load image for processing: {source_image_path}"
-                            )
-
                         processed_image = processor.process(
-                            source_image_path, **processor_kwargs
+                            source_image, **processor_kwargs
                         )
 
                     preview_id = None
                     if hasattr(processed_image, "shape"):
                         intermediate_id = str(uuid.uuid4())
-                        intermediate_path = os.path.join(
-                            outputs_folder, f"{intermediate_id}.png"
-                        )
-                        cv2.imwrite(intermediate_path, processed_image)
-                        node_outputs[node["id"]] = intermediate_path
+                        storage.put(session_id, intermediate_id, processed_image)
+                        node_outputs[node["id"]] = processed_image
                         preview_id = intermediate_id
                     elif isinstance(processed_image, dict) and processed_image.get(
-                        "artifact_path"
+                        "artifact"
                     ):
-                        artifact_path = processed_image["artifact_path"]
-                        if not os.path.exists(artifact_path):
-                            raise FileNotFoundError(
-                                f"Processor artifact output not found: {artifact_path}"
-                            )
-                        node_outputs[node["id"]] = artifact_path
-                    elif isinstance(processed_image, str) and os.path.exists(
-                        processed_image
-                    ):
-                        node_outputs[node["id"]] = processed_image
+                        artifact = processed_image["artifact"]
+                        intermediate_id = str(uuid.uuid4())
+                        storage.put(session_id, intermediate_id, artifact)
+                        node_outputs[node["id"]] = artifact
                     else:
                         raise TypeError(
                             f"Processor {processor.name} returned unsupported output type: {type(processed_image)}"
@@ -315,64 +244,11 @@ class PipelineExecutor:
                         self.socketio.emit("pipeline_progress", progress_payload)
 
             # Return all outputs or status
-            if not output_results:
-                outputs_folder = os.path.join(self.base_dir, "outputs")
-                sink_node_ids = [
-                    node_id
-                    for node_id, node_info in execution_graph.items()
-                    if not node_info["outputs"]
-                ]
-
-                for sink_node_id in sink_node_ids:
-                    sink_node = next(
-                        (n for n in nodes if n["id"] == sink_node_id), None
-                    )
-                    if not sink_node:
-                        continue
-                    if sink_node["type"] in {"input", "output"}:
-                        continue
-                    if sink_node["type"] != "camera_calibration":
-                        continue
-
-                    source_path = node_outputs.get(sink_node_id)
-                    if not source_path or not os.path.exists(source_path):
-                        continue
-
-                    source_ext = os.path.splitext(source_path)[1].lower()
-                    source_dir = os.path.abspath(os.path.dirname(source_path))
-                    outputs_dir_abs = os.path.abspath(outputs_folder)
-
-                    if source_dir == outputs_dir_abs:
-                        output_path = source_path
-                    else:
-                        output_id = str(uuid.uuid4())
-                        output_path = os.path.join(
-                            outputs_folder, f"{output_id}{source_ext}"
-                        )
-                        shutil.copy2(source_path, output_path)
-
-                    output_id = os.path.splitext(os.path.basename(output_path))[0]
-                    output_results.append(
-                        {
-                            "output_id": output_id,
-                            "output_path": output_path,
-                            "output_ext": os.path.splitext(output_path)[1].lower(),
-                            "output_name": os.path.basename(output_path),
-                            "output_type": (
-                                "artifact"
-                                if os.path.splitext(output_path)[1].lower() == ".npz"
-                                else "image"
-                            ),
-                            "node_id": sink_node_id,
-                        }
-                    )
-
             if output_results:
                 # If multiple outputs, return the first one for compatibility
                 # but include all outputs in the response
                 return {
                     "output_id": output_results[0]["output_id"],
-                    "output_path": output_results[0]["output_path"],
                     "all_outputs": output_results,
                 }
 
@@ -425,24 +301,3 @@ class PipelineExecutor:
                 visit(node_id)
 
         return order
-
-    def _find_image_file(self, file_id, folder):
-        """Find image file by ID in specified folder"""
-        # Extended list of supported image formats
-        extensions = [
-            "png",
-            "jpg",
-            "jpeg",
-            "gif",
-            "bmp",
-            "tiff",
-            "tif",
-            "webp",
-            "ico",
-            "jfif",
-        ]
-        for ext in extensions:
-            filepath = os.path.join(folder, f"{file_id}.{ext}")
-            if os.path.exists(filepath):
-                return filepath
-        return None

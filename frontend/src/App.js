@@ -453,33 +453,43 @@ function App() {
     [setNodes, deleteNode, handleNodeDoubleClick]
   );
 
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  const handleMultipleFileUploads = async (event) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const inputNodes = nodes.filter((node) => node.data.nodeType === 'input' && !node.data.file_id);
+    if (inputNodes.length < files.length) {
+      alert("Not enough empty input nodes for the selected files.");
+      return;
+    }
+
+    setIsUploading(true);
 
     try {
-      const response = await api.uploadImage(file);
-
-      // Update input nodes with the uploaded file
-      setNodes((nds) =>
-        nds.map((node) => {
-          if (node.data.nodeType === 'input') {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                file_id: response.data.file_id,
-                filename: response.data.filename,
-                // Preserve the handlers
-                onDelete: node.data.onDelete,
-              },
-            };
-          }
-          return node;
-        })
-      );
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const inputNode = inputNodes[i];
+        const response = await api.uploadImage(file);
+        
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === inputNode.id
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    file_id: response.data.file_id,
+                    filename: response.data.filename,
+                  },
+                }
+              : n
+          )
+        );
+      }
     } catch (error) {
       console.error('File upload failed:', error);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -603,10 +613,10 @@ function App() {
   );
 
   const executePipeline = useCallback(async () => {
-    // Check if there's an input node with a file_id
-    const inputNode = nodes.find((node) => node.data.nodeType === 'input');
-    if (!inputNode || !inputNode.data.file_id) {
-      alert('Please upload an image to the input node first');
+    // Check if there's at least one input node with a file_id
+    const hasInputFile = nodes.some((node) => node.data.nodeType === 'input' && node.data.file_id);
+    if (!hasInputFile) {
+      alert('Please upload an image to an input node first');
       return;
     }
 
@@ -761,6 +771,17 @@ function App() {
         <h1>Image Processing Pipeline</h1>
 
         <div className="toolbar-section">
+          <input
+            type="file"
+            multiple
+            onChange={handleMultipleFileUploads}
+            style={{ display: 'none' }}
+            id="file-upload"
+            accept="image/*"
+          />
+          <label htmlFor="file-upload" className="toolbar-button" disabled={isBusy}>
+            Upload Images
+          </label>
           <button onClick={executePipeline} disabled={isBusy}>
             {isProcessing ? 'Processing...' : 'Execute Pipeline'}
           </button>

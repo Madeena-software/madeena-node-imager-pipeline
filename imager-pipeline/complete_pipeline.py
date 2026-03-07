@@ -203,11 +203,11 @@ except ImportError:
 GPU_AVAILABLE = CUPY_AVAILABLE and get_use_gpu_flag()
 
 if GPU_AVAILABLE:
-    print("✓ GPU acceleration enabled (CuPy + USE_GPU=True)")
+    print("[OK] GPU acceleration enabled (CuPy + USE_GPU=True)")
 elif CUPY_AVAILABLE and not get_use_gpu_flag():
-    print("✗ GPU acceleration disabled (USE_GPU=False in .env)")
+    print("[X] GPU acceleration disabled (USE_GPU=False in .env)")
 else:
-    print("✗ GPU acceleration not available (CuPy not installed)")
+    print("[X] GPU acceleration not available (CuPy not installed)")
 
 # Import wavelet denoising
 try:
@@ -246,11 +246,11 @@ except ImportError:
 IMAGEJ_AVAILABLE = IMAGEJ_MODULE_AVAILABLE and get_use_imagej_flag()
 
 if IMAGEJ_AVAILABLE:
-    print("✓ ImageJ processing enabled (imagej_replicator + USE_IMAGEJ=True)")
+    print("[OK] ImageJ processing enabled (imagej_replicator + USE_IMAGEJ=True)")
 elif IMAGEJ_MODULE_AVAILABLE and not get_use_imagej_flag():
-    print("✗ ImageJ processing disabled (USE_IMAGEJ=False in .env)")
+    print("[X] ImageJ processing disabled (USE_IMAGEJ=False in .env)")
 else:
-    print("✗ ImageJ processing not available (imagej_replicator not installed)")
+    print("[X] ImageJ processing not available (imagej_replicator not installed)")
 
 # Check if camera calibration should be used
 CALIBRATION_AVAILABLE = (
@@ -261,17 +261,17 @@ CALIBRATION_AVAILABLE = (
 )
 
 if CALIBRATION_AVAILABLE:
-    print(f"✓ Camera calibration enabled (NPZ: {CONFIG['CALIBRATION_NPZ_PATH']})")
+    print(f"[OK] Camera calibration enabled (NPZ: {CONFIG['CALIBRATION_NPZ_PATH']})")
 elif CONFIG["USE_CALIBRATION"] and not CONFIG["CALIBRATION_NPZ_PATH"]:
-    print("✗ Camera calibration disabled (CALIBRATION_NPZ_PATH not set)")
+    print("[X] Camera calibration disabled (CALIBRATION_NPZ_PATH not set)")
 elif CONFIG["USE_CALIBRATION"] and not os.path.exists(CONFIG["CALIBRATION_NPZ_PATH"]):
     print(
-        f"✗ Camera calibration disabled (NPZ file not found: {CONFIG['CALIBRATION_NPZ_PATH']})"
+        f"[X] Camera calibration disabled (NPZ file not found: {CONFIG['CALIBRATION_NPZ_PATH']})"
     )
 elif not CALIBRATION_MODULE_AVAILABLE and CONFIG["USE_CALIBRATION"]:
-    print("✗ Camera calibration disabled (camera_calibration module not available)")
+    print("[X] Camera calibration disabled (camera_calibration module not available)")
 else:
-    print("✗ Camera calibration disabled (USE_CALIBRATION=False)")
+    print("[X] Camera calibration disabled (USE_CALIBRATION=False)")
 
 
 def denoise_wavelet(image, wavelet="sym4", level=3, method="BayesShrink", mode="soft"):

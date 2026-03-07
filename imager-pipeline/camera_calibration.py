@@ -318,31 +318,24 @@ class CameraCalibrator:
         objp *= self.circle_diameter  # Scale by actual circle spacing
         return objp
 
-    def detect_circles(self, image_path, invert_if_needed=True):
+    def detect_circles(self, image, invert_if_needed=True):
         """
         Detect circle grid in calibration image.
 
         Args:
-            image_path: Path to calibration image
+            image: Calibration image as a numpy array
             invert_if_needed: Try both normal and inverted image if first attempt fails
 
         Returns:
             Tuple (success, centers) where success is bool and centers are detected points
         """
-        # Load image (keep original bit depth, then normalize if needed)
-        if isinstance(image_path, str):
-            img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-        else:
-            img = image_path
-
-        if img is None:
-            print(f"Error: Could not load image from {image_path}")
+        if image is None:
             return False, None
 
-        if len(img.shape) == 2:
-            gray = img
+        if len(image.shape) == 2:
+            gray = image
         else:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         if gray.dtype != np.uint8:
             print(f"Converting image from {gray.dtype} to uint8...")
@@ -367,29 +360,27 @@ class CameraCalibrator:
         print("✗ No circles detected")
         return False, None
 
-    def calibrate_from_image(self, image_path, output_npz_path, roi_crop=None):
+    def calibrate_from_image_in_memory(self, image, roi_crop=None):
         """
-        Perform camera calibration from a single calibration image.
+        Perform camera calibration from a single calibration image and return data in memory.
 
         Args:
-            image_path: Path to calibration image with circle grid pattern
-            output_npz_path: Path to save calibration parameters (NPZ format)
+            image: Calibration image as a numpy array
             roi_crop: Optional ROI as tuple (x, y, w, h) to crop the corrected image
 
         Returns:
-            bool: True if calibration successful, False otherwise
+            dict: Calibration parameters or None if failed
         """
-        print(f"Starting camera calibration from: {image_path}")
+        print(f"Starting in-memory camera calibration...")
 
         # Detect circles
-        ret, centers = self.detect_circles(image_path)
+        ret, centers = self.detect_circles(image)
         if not ret:
             print("Error: Could not detect circle pattern in calibration image")
-            return False
+            return None
 
-        # Load image to get dimensions
-        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        img_size = img.shape[::-1]  # (width, height)
+        # Get image dimensions
+        img_size = image.shape[::-1]  # (width, height)
 
         # Prepare object and image points
         objpoints = [self.objp]  # 3D points in real world
@@ -404,7 +395,7 @@ class CameraCalibrator:
 
         if not ret:
             print("Error: Camera calibration failed")
-            return False
+            return None
 
         print("✓ Camera calibration successful")
         print(f"Camera matrix:\n{mtx}")
@@ -420,19 +411,38 @@ class CameraCalibrator:
         print(f"Optimal new camera matrix:\n{newcameramtx}")
         print(f"ROI for cropping: {final_roi}")
 
-        # Save calibration parameters
-        np.savez(
-            output_npz_path,
-            mtx=mtx,
-            dist=dist,
-            rvecs=rvecs,
-            tvecs=tvecs,
-            roi=final_roi,
-            newcameramtx=newcameramtx,
-            pattern_size=self.pattern_size,
-            circle_diameter=self.circle_diameter,
-            image_size=img_size,
+        return {
+            "mtx": mtx,
+            "dist": dist,
+            "rvecs": rvecs,
+            "tvecs": tvecs,
+            "roi": final_roi,
+            "newcameramtx": newcameramtx,
+            "pattern_size": self.pattern_size,
+            "circle_diameter": self.circle_diameter,
+            "image_size": img_size,
+        }
+
+    def calibrate_from_image(self, image_path, output_npz_path, roi_crop=None):
+        """
+        Perform camera calibration from a single calibration image.
+
+        Args:
+            image_path: Path to calibration image with circle grid pattern
+            output_npz_path: Path to save calibration parameters (NPZ format)
+            roi_crop: Optional ROI as tuple (x, y, w, h) to crop the corrected image
+
+        Returns:
+            bool: True if calibration successful, False otherwise
+        """
+        calibration_data = self.calibrate_from_image_in_memory(
+            image_path, roi_crop=roi_crop
         )
+        if not calibration_data:
+            return False
+
+        # Save calibration parameters
+        np.savez(output_npz_path, **calibration_data)
 
         print(f"✓ Calibration parameters saved to: {output_npz_path}")
 
@@ -502,13 +512,13 @@ def _scale_camera_matrix(mtx, calibration_size, target_size):
     return scaled
 
 
-def undistort_image(image, npz_path, alpha=0.0, crop_to_roi=True):
+def undistort_image(image, calibration_data, alpha=0.0, crop_to_roi=True):
     """
     Undistort an image using saved calibration parameters.
 
     Args:
         image: Input image as numpy array or path to image file
-        npz_path: Path to calibration NPZ file
+        calibration_data: Calibration data as a dictionary or path to a .npz file
         alpha: Free scaling parameter for getOptimalNewCameraMatrix.
                0.0 = strongest correction/crop, 1.0 = keep all pixels.
         crop_to_roi: If True, crop to valid ROI area.
@@ -517,11 +527,18 @@ def undistort_image(image, npz_path, alpha=0.0, crop_to_roi=True):
         numpy.ndarray: Undistorted and cropped image
     """
     # Load calibration parameters
-    with np.load(npz_path) as params:
-        mtx = params["mtx"]
-        dist = params["dist"]
+    if isinstance(calibration_data, str):
+        with np.load(calibration_data) as params:
+            mtx = params["mtx"]
+            dist = params["dist"]
+            calibration_size = (
+                tuple(params["image_size"]) if "image_size" in params else None
+            )
+    else:
+        mtx = calibration_data["mtx"]
+        dist = calibration_data["dist"]
         calibration_size = (
-            tuple(params["image_size"]) if "image_size" in params else None
+            tuple(calibration_data["image_size"]) if "image_size" in calibration_data else None
         )
 
     # Load image if path provided

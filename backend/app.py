@@ -11,7 +11,8 @@ import time
 import uuid
 
 import cv2
-from flask import Flask, jsonify, request, send_file, send_from_directory
+import numpy as np
+from flask import Flask, jsonify, request, send_file, send_from_directory, session
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -19,6 +20,7 @@ from werkzeug.utils import secure_filename
 
 from app.node_registry import NodeRegistry
 from app.pipeline_executor import PipelineExecutor
+from app.in_memory_storage import storage
 from config import get_config
 
 # ---------------------------------------------------------------------------
@@ -58,47 +60,17 @@ socketio = SocketIO(app, **socketio_kwargs)
 node_registry = NodeRegistry()
 pipeline_executor = PipelineExecutor(socketio)
 
-# Ensure runtime directories exist
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 ALLOWED_EXTENSIONS = _config.ALLOWED_EXTENSIONS
 _frontend_process: subprocess.Popen | None = None
-_last_cleanup_ts: float = 0.0
 
 
 def _allowed_file(filename: str) -> bool:
     """Return True if *filename* has an allowed image extension."""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-def _find_image(file_id: str, *folders: str) -> str | None:
-    """Search *folders* for an image matching *file_id*. Return path or None."""
-    for folder in folders:
-        for ext in ALLOWED_EXTENSIONS:
-            path = os.path.join(folder, f"{file_id}.{ext}")
-            if os.path.exists(path):
-                return path
-    return None
-
-
-def _find_output_file(file_id: str) -> str | None:
-    """Find any output file by output_id prefix in OUTPUT_FOLDER."""
-    output_folder = app.config["OUTPUT_FOLDER"]
-    if not os.path.isdir(output_folder):
-        return None
-
-    for entry in os.scandir(output_folder):
-        if not entry.is_file():
-            continue
-        name, _ext = os.path.splitext(entry.name)
-        if name == file_id:
-            return entry.path
-    return None
 
 
 def _validate_file_id(file_id: str) -> bool:
@@ -115,88 +87,6 @@ def _format_bytes(byte_count: int) -> str:
         value /= 1024.0
         unit_index += 1
     return f"{value:.1f} {units[unit_index]}"
-
-
-def _cleanup_folder(
-    folder: str, retention_hours: int, max_files: int
-) -> tuple[int, int]:
-    """Delete files older than retention and enforce max file count in *folder*."""
-    if not os.path.isdir(folder):
-        return (0, 0)
-
-    now = time.time()
-    retention_seconds = max(1, retention_hours) * 3600
-    deleted_by_age = 0
-    deleted_by_count = 0
-    all_files: list[tuple[str, float]] = []
-
-    for entry in os.scandir(folder):
-        if not entry.is_file():
-            continue
-        try:
-            mtime = entry.stat().st_mtime
-        except OSError:
-            continue
-        all_files.append((entry.path, mtime))
-
-        if now - mtime > retention_seconds:
-            try:
-                os.remove(entry.path)
-                deleted_by_age += 1
-            except OSError:
-                continue
-
-    remaining = [(path, mtime) for path, mtime in all_files if os.path.exists(path)]
-    max_files = max(1, max_files)
-    if len(remaining) > max_files:
-        remaining.sort(key=lambda item: item[1], reverse=True)
-        for old_path, _ in remaining[max_files:]:
-            try:
-                os.remove(old_path)
-                deleted_by_count += 1
-            except OSError:
-                continue
-
-    return (deleted_by_age, deleted_by_count)
-
-
-def _maybe_cleanup_storage(force: bool = False) -> None:
-    """Run periodic cleanup for upload/output folders to limit disk growth."""
-    global _last_cleanup_ts
-
-    if not app.config.get("AUTO_CLEANUP_ENABLED", True):
-        return
-
-    now = time.time()
-    interval_seconds = max(1, app.config.get("CLEANUP_INTERVAL_SECONDS", 60))
-    if not force and now - _last_cleanup_ts < interval_seconds:
-        return
-
-    upload_age, upload_count = _cleanup_folder(
-        app.config["UPLOAD_FOLDER"],
-        app.config.get("UPLOAD_RETENTION_HOURS", 24),
-        app.config.get("UPLOAD_MAX_FILES", 1000),
-    )
-    output_age, output_count = _cleanup_folder(
-        app.config["OUTPUT_FOLDER"],
-        app.config.get("OUTPUT_RETENTION_HOURS", 24),
-        app.config.get("OUTPUT_MAX_FILES", 2000),
-    )
-
-    _last_cleanup_ts = now
-    deleted_total = upload_age + upload_count + output_age + output_count
-    if deleted_total:
-        logger.info(
-            "Storage cleanup removed %d file(s): uploads(age=%d,count=%d), outputs(age=%d,count=%d)",
-            deleted_total,
-            upload_age,
-            upload_count,
-            output_age,
-            output_count,
-        )
-
-
-_maybe_cleanup_storage(force=True)
 
 
 def _should_start_frontend() -> bool:
@@ -368,17 +258,19 @@ def upload_image():
             ),
             400,
         )
+    
+    in_memory_file = file.read()
+    np_image = np.frombuffer(in_memory_file, np.uint8)
+    img = cv2.imdecode(np_image, cv2.IMREAD_UNCHANGED)
 
-    filename = secure_filename(file.filename)
-    extension = filename.rsplit(".", 1)[1].lower()
+    if img is None:
+        return jsonify({"error": "Cannot read image"}), 500
+
     file_id = str(uuid.uuid4())
-    new_filename = f"{file_id}.{extension}"
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], new_filename)
-    file.save(filepath)
-    _maybe_cleanup_storage()
+    storage.put(session.sid, file_id, img)
 
-    logger.info("Uploaded %s as %s", filename, file_id)
-    return jsonify({"file_id": file_id, "filename": filename, "filepath": filepath})
+    logger.info("Uploaded %s as %s for session %s", file.filename, file_id, session.sid)
+    return jsonify({"file_id": file_id, "filename": file.filename})
 
 
 @app.route("/api/execute-pipeline", methods=["POST"])
@@ -394,11 +286,10 @@ def execute_pipeline():
     if not nodes:
         return jsonify({"status": "error", "message": "Pipeline has no nodes"}), 400
 
-    logger.info("Executing pipeline with %d nodes and %d edges", len(nodes), len(edges))
+    logger.info("Executing pipeline with %d nodes and %d edges for session %s", len(nodes), len(edges), session.sid)
 
     try:
-        result = pipeline_executor.execute(nodes, edges)
-        _maybe_cleanup_storage()
+        result = pipeline_executor.execute(nodes, edges, session.sid)
         return jsonify({"status": "success", "result": result})
     except Exception as exc:
         logger.error("Pipeline execution failed: %s", exc, exc_info=True)
@@ -411,21 +302,15 @@ def get_image(file_id):
     if not _validate_file_id(file_id):
         return jsonify({"error": "Invalid file ID"}), 400
 
-    filepath = _find_image(
-        file_id, app.config["UPLOAD_FOLDER"], app.config["OUTPUT_FOLDER"]
-    )
-    if not filepath:
+    image = storage.get(session.sid, file_id)
+    if image is None:
         return jsonify({"error": "Image not found"}), 404
 
-    # Convert TIFF → PNG for browser compatibility
-    if filepath.lower().endswith((".tiff", ".tif")):
-        image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
-        if image is not None:
-            success, encoded = cv2.imencode(".png", image)
-            if success:
-                return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png")
+    success, encoded = cv2.imencode(".png", image)
+    if not success:
+        return jsonify({"error": "Cannot encode image"}), 500
 
-    return send_file(filepath)
+    return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png")
 
 
 @app.route("/api/preview/<file_id>")
@@ -434,15 +319,9 @@ def get_preview(file_id):
     if not _validate_file_id(file_id):
         return jsonify({"error": "Invalid file ID"}), 400
 
-    filepath = _find_image(
-        file_id, app.config["UPLOAD_FOLDER"], app.config["OUTPUT_FOLDER"]
-    )
-    if not filepath:
-        return jsonify({"error": "Image not found"}), 404
-
-    image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
+    image = storage.get(session.sid, file_id)
     if image is None:
-        return jsonify({"error": "Cannot read image"}), 500
+        return jsonify({"error": "Image not found"}), 404
 
     max_size = 150
     h, w = image.shape[:2]
@@ -465,13 +344,18 @@ def get_output_file(file_id):
     if not _validate_file_id(file_id):
         return jsonify({"error": "Invalid file ID"}), 400
 
-    filepath = _find_output_file(file_id)
-    if not filepath:
+    data = storage.get(session.sid, file_id)
+    if data is None:
         return jsonify({"error": "Output file not found"}), 404
 
-    return send_file(
-        filepath, as_attachment=True, download_name=os.path.basename(filepath)
-    )
+    if isinstance(data, np.ndarray):
+        success, encoded = cv2.imencode(".png", data)
+        if not success:
+            return jsonify({"error": "Cannot encode image"}), 500
+        return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png", as_attachment=True, download_name=f"{file_id}.png")
+
+    # For other data types, e.g. .npz
+    return send_file(io.BytesIO(data), as_attachment=True, download_name=f"{file_id}.npz")
 
 
 # ---------------------------------------------------------------------------
@@ -506,13 +390,14 @@ def serve_frontend(path):
 
 @socketio.on("connect")
 def handle_connect():
-    logger.info("Client connected")
+    logger.info(f"Client connected with session ID: {session.sid}")
     emit("connected", {"data": "Connected to server"})
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
-    logger.info("Client disconnected")
+    logger.info(f"Client disconnected, cleaning up session: {session.sid}")
+    storage.destroy_session_cache(session.sid)
 
 
 # ---------------------------------------------------------------------------

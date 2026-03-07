@@ -69,7 +69,7 @@ code {
   color: var(--text-primary);
 }
 
-.toolbar button {
+.toolbar button, .toolbar label {
   background-color: var(--accent-color);
   color: white;
   border: none;
@@ -79,13 +79,14 @@ code {
   font-size: 14px;
 }
 
-.toolbar button:hover {
+.toolbar button:hover, .toolbar label:hover {
   background-color: var(--accent-hover);
 }
 
-.toolbar button:disabled {
+.toolbar button:disabled, .toolbar label[disabled] {
   background-color: var(--border-color);
   cursor: not-allowed;
+  color: var(--text-tertiary);
 }
 
 .main-content {
