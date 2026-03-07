@@ -87,6 +87,19 @@ How it works:
 - `GET /api/preview/<file_id>` and TIFF display no longer create temp files on disk.
 - Cleanup runs periodically and removes old files + enforces max file counts in `backend/uploads` and `backend/outputs`.
 
+
+## New pipeline nodes
+
+* **TIFF JSON to DICOM** – converts an input image into a DICOM file using
+  an accompanying JSON metadata payload.  Because this node produces an
+  artifact rather than a new image it declares `outputs: 0` in its
+  metadata; the front‑end palette now displays a 📦 icon next to any node
+  with no outputs so that such "terminal" processors are easier to spot.
+
+If you add a new processor to the backend make sure to restart the server
+and refresh the browser; available nodes are fetched dynamically from the
+`/api/nodes` endpoint and no rebuild of the frontend should be required.
+
 ### Frontend Setup
 
 1. Navigate to the frontend directory:

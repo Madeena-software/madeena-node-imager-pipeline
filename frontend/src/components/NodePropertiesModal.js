@@ -96,6 +96,41 @@ const NodePropertiesModal = ({
     });
   };
 
+  const handleImageUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setIsUploading(true);
+    onUploadingChange?.(true);
+
+    try {
+      const response = await api.uploadImage(file);
+
+      // update the node immediately so UI reflects the change
+      onUpdateNode?.(node.id, parameters, {
+        file_id: response.data.file_id,
+        filename: response.data.filename,
+      });
+
+      // also update selected node state if modal is open
+      setNodeAttachmentData((prev) => ({ ...prev }));
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      alert(error.response?.data?.error || error.response?.data?.message || 'Image upload failed');
+    } finally {
+      setIsUploading(false);
+      onUploadingChange?.(false);
+    }
+  };
+
+  const handleClearFile = () => {
+    onUpdateNode?.(node.id, parameters, {
+      file_id: null,
+      filename: '',
+    });
+  };
+
   const renderParameterInput = (paramName, paramConfig) => {
     const value = parameters[paramName] ?? paramConfig.default ?? '';
 
@@ -297,6 +332,23 @@ const NodePropertiesModal = ({
                 </div>
               ) : (
                 <div className="no-file">No file selected.</div>
+              )}
+
+              {/* file upload control for input nodes */}
+              <div className="parameter-input-group">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={isUploading}
+                  className="parameter-input text-input"
+                />
+              </div>
+
+              {node.data.filename && (
+                <button className="reset-button" onClick={handleClearFile} disabled={isUploading}>
+                  Remove File
+                </button>
               )}
             </div>
           )}

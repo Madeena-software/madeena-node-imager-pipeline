@@ -490,6 +490,18 @@ if __name__ == "__main__":
     ):
         _start_frontend_dev_server()
 
+    # Reduce werkzeug logging noise and print a single, explicit startup line
+    try:
+        import werkzeug
+
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    except Exception:
+        # If werkzeug is not available or the import fails, continue silently
+        pass
+
+    # Print a concise startup message showing only the chosen host and port
+    logger.info("Server available at http://%s:%s", _config.HOST, _config.PORT)
+
     socketio.run(
         app,
         debug=app.config.get("DEBUG", False),

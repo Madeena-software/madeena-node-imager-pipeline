@@ -1,6 +1,10 @@
 import io from 'socket.io-client';
 
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+// Socket URL selection similar to API: prefer explicit env, fall back to dev backend, otherwise same-origin
+const isDevServer = window.location.port === '3000' || window.location.hostname === 'localhost';
+const SOCKET_URL =
+  process.env.REACT_APP_SOCKET_URL ||
+  (isDevServer ? `http://${window.location.hostname}:5000` : window.location.origin);
 
 class SocketService {
   constructor() {

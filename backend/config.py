@@ -38,7 +38,8 @@ class Config:
 
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 
-    HOST = os.environ.get("HOST", "0.0.0.0")
+    # Default to localhost to avoid printing external IPs in development terminals
+    HOST = os.environ.get("HOST", "127.0.0.1")
     PORT = int(os.environ.get("PORT", 5000))
 
     ALLOWED_EXTENSIONS = frozenset(
