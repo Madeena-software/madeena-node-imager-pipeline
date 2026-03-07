@@ -466,15 +466,15 @@ def serve_frontend(path):
 
 
 @socketio.on("connect")
-def handle_connect():
-    logger.info(f"Client connected with session ID: {session.sid}")
+def handle_connect(auth):
+    logger.info(f"Client connected with session ID: {request.sid}")
     emit("connected", {"data": "Connected to server"})
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
-    logger.info(f"Client disconnected, cleaning up session: {session.sid}")
-    storage.destroy_session_cache(session.sid)
+    logger.info(f"Client disconnected, cleaning up session: {request.sid}")
+    storage.destroy_session_cache(request.sid)
 
 
 # ---------------------------------------------------------------------------

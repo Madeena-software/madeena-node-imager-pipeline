@@ -373,14 +373,25 @@ class CameraCalibrator:
         """
         print(f"Starting in-memory camera calibration...")
 
+        # Load image if a path was provided
+        if isinstance(image, str):
+            img = cv2.imread(image, cv2.IMREAD_UNCHANGED)
+        else:
+            # assume numpy array
+            img = image.copy()
+
+        if img is None:
+            print("Error: Could not load calibration image")
+            return None
+
         # Detect circles
-        ret, centers = self.detect_circles(image)
+        ret, centers = self.detect_circles(img)
         if not ret:
             print("Error: Could not detect circle pattern in calibration image")
             return None
 
         # Get image dimensions
-        img_size = image.shape[::-1]  # (width, height)
+        img_size = (img.shape[1], img.shape[0])  # (width, height)
 
         # Prepare object and image points
         objpoints = [self.objp]  # 3D points in real world
@@ -538,7 +549,9 @@ def undistort_image(image, calibration_data, alpha=0.0, crop_to_roi=True):
         mtx = calibration_data["mtx"]
         dist = calibration_data["dist"]
         calibration_size = (
-            tuple(calibration_data["image_size"]) if "image_size" in calibration_data else None
+            tuple(calibration_data["image_size"])
+            if "image_size" in calibration_data
+            else None
         )
 
     # Load image if path provided
