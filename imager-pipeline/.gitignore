@@ -210,6 +210,4 @@ Desktop.ini
 *.txt
 
 # Ignore build artifacts
-build_image_pairs.pyc
 complete_pipeline.pyc
-test_complete_pipeline.pyc
