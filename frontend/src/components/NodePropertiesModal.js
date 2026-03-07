@@ -12,11 +12,19 @@ const NodePropertiesModal = ({
   const [parameters, setParameters] = useState({});
   const [nodeInfo, setNodeInfo] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [nodeAttachmentData, setNodeAttachmentData] = useState({
+    json_file_id: null,
+    json_filename: '',
+  });
 
   useEffect(() => {
     if (isOpen && node) {
       // Initialize parameters with current values or defaults
       setParameters(node.data.parameters || {});
+      setNodeAttachmentData({
+        json_file_id: node.data.json_file_id || null,
+        json_filename: node.data.json_filename || '',
+      });
 
       // Get node definition from available nodes
       const nodeDefinition = availableNodes.find((n) => n.id === node.data.nodeType);
@@ -32,8 +40,13 @@ const NodePropertiesModal = ({
   };
 
   const handleSave = () => {
+    if (node?.data?.nodeType === 'tiff_json_to_dicom' && !nodeAttachmentData.json_file_id) {
+      alert('Please upload a JSON metadata file for this node.');
+      return;
+    }
+
     if (onUpdateNode && node) {
-      onUpdateNode(node.id, parameters, {});
+      onUpdateNode(node.id, parameters, nodeAttachmentData);
     }
     onClose();
   };
@@ -46,6 +59,41 @@ const NodePropertiesModal = ({
       });
       setParameters(defaultParams);
     }
+  };
+
+  const handleJsonUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      alert('Please select a .json file.');
+      return;
+    }
+
+    setIsUploading(true);
+    onUploadingChange?.(true);
+
+    try {
+      const response = await api.uploadJson(file);
+      setNodeAttachmentData({
+        json_file_id: response.data.file_id,
+        json_filename: response.data.filename,
+      });
+    } catch (error) {
+      console.error('JSON upload failed:', error);
+      alert(error.response?.data?.error || error.response?.data?.message || 'JSON upload failed');
+    } finally {
+      setIsUploading(false);
+      onUploadingChange?.(false);
+    }
+  };
+
+  const handleClearJson = () => {
+    setNodeAttachmentData({
+      json_file_id: null,
+      json_filename: '',
+    });
   };
 
   const renderParameterInput = (paramName, paramConfig) => {
@@ -249,6 +297,36 @@ const NodePropertiesModal = ({
                 </div>
               ) : (
                 <div className="no-file">No file selected.</div>
+              )}
+            </div>
+          )}
+
+          {node.data.nodeType === 'tiff_json_to_dicom' && (
+            <div className="input-node-section">
+              <h4>JSON Metadata</h4>
+              {nodeAttachmentData.json_filename ? (
+                <div className="current-file">
+                  <strong>Current file:</strong> {nodeAttachmentData.json_filename}
+                  <div className="file-info">File ID: {nodeAttachmentData.json_file_id}</div>
+                </div>
+              ) : (
+                <div className="no-file">No JSON metadata uploaded.</div>
+              )}
+
+              <div className="parameter-input-group">
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleJsonUpload}
+                  disabled={isUploading}
+                  className="parameter-input text-input"
+                />
+              </div>
+
+              {nodeAttachmentData.json_filename && (
+                <button className="reset-button" onClick={handleClearJson} disabled={isUploading}>
+                  Remove JSON
+                </button>
               )}
             </div>
           )}

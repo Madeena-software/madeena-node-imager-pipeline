@@ -29,6 +29,7 @@ from complete_pipeline import (
     normalize_to_max_value,
     apply_advanced_median_filter,
 )
+from tiff_json_to_dcm import image_to_dicom_bytes
 
 MAX_16BIT = 65535
 MAX_8BIT = 255
@@ -785,3 +786,40 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
 
     def process(self, image, **kwargs):
         return image
+
+
+# =============================================================================
+# 14. TIFF JSON to DICOM (terminal artifact)
+# =============================================================================
+class TiffJsonToDICOMProcessor(ImageProcessor):
+    def __init__(self):
+        super().__init__()
+        self.name = "TIFF JSON to DICOM"
+        self.description = (
+            "Convert the incoming image into a DICOM file using uploaded JSON metadata"
+        )
+        self.parameters = {}
+        self.output_count = 0
+
+    def process(self, image, **kwargs):
+        json_metadata = kwargs.get("json_metadata")
+        json_filename = kwargs.get("json_filename", "metadata.json")
+
+        if not json_metadata:
+            raise ValueError(
+                "TIFF JSON to DICOM requires an uploaded JSON metadata file"
+            )
+
+        output_stem = os.path.splitext(os.path.basename(json_filename))[0] or "output"
+        output_name = f"{output_stem}.dcm"
+        dicom_bytes = image_to_dicom_bytes(
+            image, json_metadata, output_name=output_name
+        )
+
+        return {
+            "artifact": dicom_bytes,
+            "output_ext": ".dcm",
+            "output_type": "dicom",
+            "mime_type": "application/dicom",
+            "output_name": output_name,
+        }

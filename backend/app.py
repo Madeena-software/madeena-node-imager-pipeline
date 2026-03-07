@@ -2,6 +2,7 @@
 
 import atexit
 import io
+import json
 import logging
 import os
 import shutil
@@ -76,6 +77,20 @@ def _allowed_file(filename: str) -> bool:
 def _validate_file_id(file_id: str) -> bool:
     """Basic path-traversal prevention."""
     return bool(file_id) and not any(ch in file_id for ch in ("/", "\\", ".."))
+
+
+def _get_session_id() -> str:
+    """Return a stable session id for HTTP requests."""
+    session_id = session.get("_pipeline_session_id")
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        session["_pipeline_session_id"] = session_id
+    return session_id
+
+
+def _allowed_json_file(filename: str) -> bool:
+    """Return True if *filename* has a .json extension."""
+    return "." in filename and filename.rsplit(".", 1)[1].lower() == "json"
 
 
 def _format_bytes(byte_count: int) -> str:
@@ -258,7 +273,7 @@ def upload_image():
             ),
             400,
         )
-    
+
     in_memory_file = file.read()
     np_image = np.frombuffer(in_memory_file, np.uint8)
     img = cv2.imdecode(np_image, cv2.IMREAD_UNCHANGED)
@@ -266,11 +281,52 @@ def upload_image():
     if img is None:
         return jsonify({"error": "Cannot read image"}), 500
 
+    session_id = _get_session_id()
     file_id = str(uuid.uuid4())
-    storage.put(session.sid, file_id, img)
+    storage.put(session_id, file_id, img)
 
-    logger.info("Uploaded %s as %s for session %s", file.filename, file_id, session.sid)
+    logger.info("Uploaded %s as %s for session %s", file.filename, file_id, session_id)
     return jsonify({"file_id": file_id, "filename": file.filename})
+
+
+@app.route("/api/upload-json", methods=["POST"])
+def upload_json_metadata():
+    """Upload a JSON metadata file and return its unique file_id."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No file selected"}), 400
+
+    if not _allowed_json_file(file.filename):
+        return jsonify({"error": "Invalid file type. Supported: .json"}), 400
+
+    try:
+        file_bytes = file.read()
+        metadata = json.loads(file_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return jsonify({"error": "Invalid JSON file"}), 400
+
+    if not isinstance(metadata, dict):
+        return jsonify({"error": "JSON metadata must be an object"}), 400
+
+    session_id = _get_session_id()
+    file_id = str(uuid.uuid4())
+    storage.put(
+        session_id,
+        file_id,
+        {
+            "kind": "json_metadata",
+            "data": metadata,
+            "filename": secure_filename(file.filename),
+        },
+    )
+
+    logger.info(
+        "Uploaded metadata %s as %s for session %s", file.filename, file_id, session_id
+    )
+    return jsonify({"file_id": file_id, "filename": secure_filename(file.filename)})
 
 
 @app.route("/api/execute-pipeline", methods=["POST"])
@@ -286,10 +342,16 @@ def execute_pipeline():
     if not nodes:
         return jsonify({"status": "error", "message": "Pipeline has no nodes"}), 400
 
-    logger.info("Executing pipeline with %d nodes and %d edges for session %s", len(nodes), len(edges), session.sid)
+    session_id = _get_session_id()
+    logger.info(
+        "Executing pipeline with %d nodes and %d edges for session %s",
+        len(nodes),
+        len(edges),
+        session_id,
+    )
 
     try:
-        result = pipeline_executor.execute(nodes, edges, session.sid)
+        result = pipeline_executor.execute(nodes, edges, session_id)
         return jsonify({"status": "success", "result": result})
     except Exception as exc:
         logger.error("Pipeline execution failed: %s", exc, exc_info=True)
@@ -302,8 +364,8 @@ def get_image(file_id):
     if not _validate_file_id(file_id):
         return jsonify({"error": "Invalid file ID"}), 400
 
-    image = storage.get(session.sid, file_id)
-    if image is None:
+    image = storage.get(_get_session_id(), file_id)
+    if image is None or not isinstance(image, np.ndarray):
         return jsonify({"error": "Image not found"}), 404
 
     success, encoded = cv2.imencode(".png", image)
@@ -319,8 +381,8 @@ def get_preview(file_id):
     if not _validate_file_id(file_id):
         return jsonify({"error": "Invalid file ID"}), 400
 
-    image = storage.get(session.sid, file_id)
-    if image is None:
+    image = storage.get(_get_session_id(), file_id)
+    if image is None or not isinstance(image, np.ndarray):
         return jsonify({"error": "Image not found"}), 404
 
     max_size = 150
@@ -344,7 +406,7 @@ def get_output_file(file_id):
     if not _validate_file_id(file_id):
         return jsonify({"error": "Invalid file ID"}), 400
 
-    data = storage.get(session.sid, file_id)
+    data = storage.get(_get_session_id(), file_id)
     if data is None:
         return jsonify({"error": "Output file not found"}), 404
 
@@ -352,10 +414,25 @@ def get_output_file(file_id):
         success, encoded = cv2.imencode(".png", data)
         if not success:
             return jsonify({"error": "Cannot encode image"}), 500
-        return send_file(io.BytesIO(encoded.tobytes()), mimetype="image/png", as_attachment=True, download_name=f"{file_id}.png")
+        return send_file(
+            io.BytesIO(encoded.tobytes()),
+            mimetype="image/png",
+            as_attachment=True,
+            download_name=f"{file_id}.png",
+        )
 
-    # For other data types, e.g. .npz
-    return send_file(io.BytesIO(data), as_attachment=True, download_name=f"{file_id}.npz")
+    if isinstance(data, dict) and "content" in data:
+        download_name = (
+            data.get("download_name") or f"{file_id}{data.get('output_ext', '.bin')}"
+        )
+        return send_file(
+            io.BytesIO(data["content"]),
+            mimetype=data.get("mimetype", "application/octet-stream"),
+            as_attachment=True,
+            download_name=download_name,
+        )
+
+    return jsonify({"error": "Unsupported output type"}), 500
 
 
 # ---------------------------------------------------------------------------

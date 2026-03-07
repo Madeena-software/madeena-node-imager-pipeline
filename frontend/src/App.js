@@ -398,8 +398,21 @@ function App() {
             : node
         )
       );
+
+      setSelectedNodeForProperties((prev) =>
+        prev && prev.id === nodeId
+          ? {
+              ...prev,
+              data: {
+                ...prev.data,
+                ...additionalData,
+                parameters: newParameters,
+              },
+            }
+          : prev
+      );
     },
-    [setNodes]
+    [setNodes, setSelectedNodeForProperties]
   );
 
   const onDragOver = useCallback((event) => {
@@ -459,7 +472,7 @@ function App() {
 
     const inputNodes = nodes.filter((node) => node.data.nodeType === 'input' && !node.data.file_id);
     if (inputNodes.length < files.length) {
-      alert("Not enough empty input nodes for the selected files.");
+      alert('Not enough empty input nodes for the selected files.');
       return;
     }
 
@@ -470,7 +483,7 @@ function App() {
         const file = files[i];
         const inputNode = inputNodes[i];
         const response = await api.uploadImage(file);
-        
+
         setNodes((nds) =>
           nds.map((n) =>
             n.id === inputNode.id
@@ -620,6 +633,14 @@ function App() {
       return;
     }
 
+    const missingDicomJson = nodes.some(
+      (node) => node.data.nodeType === 'tiff_json_to_dicom' && !node.data.json_file_id
+    );
+    if (missingDicomJson) {
+      alert('Please upload JSON metadata in each TIFF JSON to DICOM node before execution');
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingStatus([]);
 
@@ -651,6 +672,11 @@ function App() {
                     file_id: node.data.file_id,
                   }
                 : {}),
+              ...(node.data.nodeType === 'tiff_json_to_dicom' && node.data.json_file_id
+                ? {
+                    json_file_id: node.data.json_file_id,
+                  }
+                : {}),
               // Include input_mapping for multi-input nodes
               ...(Object.keys(input_mapping).length > 0
                 ? {
@@ -673,43 +699,52 @@ function App() {
       if (response.data.result && response.data.result.output_id) {
         const result = response.data.result;
 
-        const resolveOutputExt = (output) => {
+        const resolveOutputMetadata = (output) => {
           const rawExt = (output?.output_ext || '').trim().toLowerCase();
-          if (rawExt) {
-            return rawExt.startsWith('.') ? rawExt : `.${rawExt}`;
-          }
+          const outputType = (output?.output_type || '').trim().toLowerCase();
+          let resolvedExt = '.png';
 
-          const outputName = (output?.output_name || '').trim().toLowerCase();
-          if (outputName.includes('.')) {
-            const nameExt = `.${outputName.split('.').pop()}`;
-            if (nameExt && nameExt !== '.') {
-              return nameExt;
+          if (rawExt) {
+            resolvedExt = rawExt.startsWith('.') ? rawExt : `.${rawExt}`;
+          } else {
+            const outputName = (output?.output_name || '').trim().toLowerCase();
+            if (outputName.includes('.')) {
+              const nameExt = `.${outputName.split('.').pop()}`;
+              if (nameExt && nameExt !== '.') {
+                resolvedExt = nameExt;
+              }
+            } else if (outputType === 'artifact') {
+              resolvedExt = '.npz';
+            } else if (outputType === 'dicom') {
+              resolvedExt = '.dcm';
             }
           }
 
-          if ((output?.output_type || '').toLowerCase() === 'artifact') {
-            return '.npz';
-          }
-          return '.png';
+          return {
+            outputExt: resolvedExt,
+            outputType: outputType || (resolvedExt === '.png' ? 'image' : 'artifact'),
+          };
         };
 
         // Check if there are multiple outputs
         if (result.all_outputs && result.all_outputs.length > 0) {
           // Add status for each output
           result.all_outputs.forEach((output, index) => {
-            const resolvedExt = resolveOutputExt(output);
-            const isNpz = resolvedExt === '.npz';
+            const { outputExt, outputType } = resolveOutputMetadata(output);
             setProcessingStatus((prev) => [
               ...prev,
               {
                 status: 'completed',
-                message: isNpz
-                  ? `Calibration artifact ${index + 1} generated successfully`
-                  : `Output image ${index + 1} completed successfully`,
+                message:
+                  outputExt === '.dcm'
+                    ? `DICOM output ${index + 1} generated successfully`
+                    : outputExt === '.npz'
+                      ? `Calibration artifact ${index + 1} generated successfully`
+                      : `Output image ${index + 1} completed successfully`,
                 output_id: output.output_id,
-                output_ext: resolvedExt,
+                output_ext: outputExt,
                 output_name: output.output_name,
-                output_type: output.output_type || (isNpz ? 'artifact' : 'image'),
+                output_type: outputType,
               },
             ]);
           });
@@ -717,19 +752,21 @@ function App() {
           // Single output
           const singleOutput =
             result.all_outputs && result.all_outputs[0] ? result.all_outputs[0] : null;
-          const singleExt = resolveOutputExt(singleOutput);
-          const isNpz = singleExt.toLowerCase() === '.npz';
+          const { outputExt, outputType } = resolveOutputMetadata(singleOutput);
           setProcessingStatus((prev) => [
             ...prev,
             {
               status: 'completed',
-              message: isNpz
-                ? 'Calibration artifact generated successfully'
-                : 'Pipeline completed successfully',
+              message:
+                outputExt === '.dcm'
+                  ? 'DICOM output generated successfully'
+                  : outputExt === '.npz'
+                    ? 'Calibration artifact generated successfully'
+                    : 'Pipeline completed successfully',
               output_id: result.output_id,
-              output_ext: singleExt,
+              output_ext: outputExt,
               output_name: singleOutput?.output_name,
-              output_type: singleOutput?.output_type || (isNpz ? 'artifact' : 'image'),
+              output_type: outputType,
             },
           ]);
         }

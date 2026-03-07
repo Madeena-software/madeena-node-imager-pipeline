@@ -21,6 +21,69 @@ class PipelineExecutor:
         self.socketio = socketio
         self.node_registry = node_registry or NodeRegistry()
 
+    def _store_artifact(self, session_id, artifact_descriptor, output_id=None):
+        """Persist an artifact payload for download and return output metadata."""
+        artifact_bytes = artifact_descriptor.get("artifact")
+        if isinstance(artifact_bytes, bytearray):
+            artifact_bytes = bytes(artifact_bytes)
+
+        if not isinstance(artifact_bytes, bytes):
+            raise TypeError(
+                "Artifact outputs must provide bytes in the 'artifact' field"
+            )
+
+        output_ext = artifact_descriptor.get("output_ext", ".bin")
+        if not output_ext.startswith("."):
+            output_ext = f".{output_ext}"
+
+        output_id = output_id or str(uuid.uuid4())
+        output_type = artifact_descriptor.get("output_type", "artifact")
+        output_name = (
+            artifact_descriptor.get("output_name") or f"{output_id}{output_ext}"
+        )
+
+        storage.put(
+            session_id,
+            output_id,
+            {
+                "content": artifact_bytes,
+                "mimetype": artifact_descriptor.get(
+                    "mime_type", "application/octet-stream"
+                ),
+                "download_name": output_name,
+                "output_ext": output_ext,
+                "output_type": output_type,
+            },
+        )
+
+        return {
+            "output_id": output_id,
+            "output_ext": output_ext,
+            "output_name": output_name,
+            "output_type": output_type,
+        }
+
+    def _resolve_processor_kwargs(self, processor_kwargs, session_id):
+        """Hydrate processor kwargs that reference uploaded session files."""
+        json_file_id = processor_kwargs.get("json_file_id")
+        if not json_file_id:
+            return processor_kwargs
+
+        metadata_record = storage.get(session_id, json_file_id)
+        if metadata_record is None:
+            raise ValueError("Uploaded JSON metadata was not found for this session")
+
+        if (
+            not isinstance(metadata_record, dict)
+            or metadata_record.get("kind") != "json_metadata"
+        ):
+            raise TypeError("json_file_id does not reference uploaded JSON metadata")
+
+        resolved_kwargs = dict(processor_kwargs)
+        resolved_kwargs["json_metadata"] = metadata_record.get("data")
+        resolved_kwargs["json_filename"] = metadata_record.get("filename")
+        return resolved_kwargs
+
     def execute(self, nodes, edges, session_id):
         """Execute a pipeline of connected nodes"""
         try:
@@ -50,7 +113,7 @@ class PipelineExecutor:
                         f"Input image not found for node {input_node['id']}: {file_id}"
                     )
                     continue
-                
+
                 logger.info(
                     f"Input image loaded for node {input_node['id']}, shape: {image.shape}"
                 )
@@ -93,21 +156,28 @@ class PipelineExecutor:
                             f"No image available from source node {output_source_ids[0]}"
                         )
 
-                    # Save final result to in-memory storage
-                    output_id = str(uuid.uuid4())
-                    storage.put(session_id, output_id, source_image)
-                    
-                    output_ext = ".npz" if isinstance(source_image, dict) else ".png"
-
-                    output_results.append(
-                        {
-                            "output_id": output_id,
-                            "output_ext": output_ext,
-                            "output_name": f"{output_id}{output_ext}",
-                            "output_type": "artifact" if output_ext == ".npz" else "image",
-                            "node_id": node["id"],
-                        }
-                    )
+                    if isinstance(source_image, np.ndarray):
+                        output_id = str(uuid.uuid4())
+                        storage.put(session_id, output_id, source_image)
+                        output_results.append(
+                            {
+                                "output_id": output_id,
+                                "output_ext": ".png",
+                                "output_name": f"{output_id}.png",
+                                "output_type": "image",
+                                "node_id": node["id"],
+                            }
+                        )
+                    elif isinstance(source_image, dict) and source_image.get(
+                        "artifact"
+                    ):
+                        output_result = self._store_artifact(session_id, source_image)
+                        output_result["node_id"] = node["id"]
+                        output_results.append(output_result)
+                    else:
+                        raise TypeError(
+                            f"Output node {node['id']} received unsupported input type: {type(source_image)}"
+                        )
 
                     processed_nodes.add(node["id"])
 
@@ -133,7 +203,9 @@ class PipelineExecutor:
                         )
 
                     logger.info(f"Processing node {node['id']} with {processor.name}")
-                    processor_kwargs = dict(node["data"])
+                    processor_kwargs = self._resolve_processor_kwargs(
+                        dict(node["data"]), session_id
+                    )
 
                     # Check if processor supports multiple inputs
                     if hasattr(processor, "multi_input") and processor.multi_input:
@@ -214,7 +286,7 @@ class PipelineExecutor:
                         )
 
                     preview_id = None
-                    if hasattr(processed_image, "shape"):
+                    if isinstance(processed_image, np.ndarray):
                         intermediate_id = str(uuid.uuid4())
                         storage.put(session_id, intermediate_id, processed_image)
                         node_outputs[node["id"]] = processed_image
@@ -222,10 +294,14 @@ class PipelineExecutor:
                     elif isinstance(processed_image, dict) and processed_image.get(
                         "artifact"
                     ):
-                        artifact = processed_image["artifact"]
-                        intermediate_id = str(uuid.uuid4())
-                        storage.put(session_id, intermediate_id, artifact)
-                        node_outputs[node["id"]] = artifact
+                        node_outputs[node["id"]] = processed_image
+
+                        if not execution_graph[node["id"]]["outputs"]:
+                            output_result = self._store_artifact(
+                                session_id, processed_image
+                            )
+                            output_result["node_id"] = node["id"]
+                            output_results.append(output_result)
                     else:
                         raise TypeError(
                             f"Processor {processor.name} returned unsupported output type: {type(processed_image)}"

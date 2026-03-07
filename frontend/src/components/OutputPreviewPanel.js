@@ -73,13 +73,15 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
       index: i,
     })),
     ...outputImageIds.map((o, i) => ({
-      type: o.output_ext === '.npz' ? 'artifact' : 'image',
+      type: o.output_type === 'image' ? 'image' : 'artifact',
       id: o.output_id,
       label:
         o.output_name ||
-        (o.output_ext === '.npz'
-          ? `Calibration Artifact${outputImageIds.length > 1 ? ` ${i + 1}` : ''}`
-          : `Output${outputImageIds.length > 1 ? ` ${i + 1}` : ''}`),
+        (o.output_ext === '.dcm'
+          ? `DICOM Output${outputImageIds.length > 1 ? ` ${i + 1}` : ''}`
+          : o.output_ext === '.npz'
+            ? `Calibration Artifact${outputImageIds.length > 1 ? ` ${i + 1}` : ''}`
+            : `Output${outputImageIds.length > 1 ? ` ${i + 1}` : ''}`),
       ext: o.output_ext,
       output_id: o.output_id,
       index: i,
@@ -98,8 +100,21 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
       <div className="output-list">
         {allItems.map((item) => {
           const isExpanded = expandedItems.has(item.id);
-          const isNpz = item.ext === '.npz';
           const isInput = item.type === 'input';
+          const isImage = item.type === 'image';
+          const artifactLabel =
+            item.ext === '.dcm'
+              ? 'DICOM File (.dcm)'
+              : item.ext === '.npz'
+                ? 'NumPy Archive (.npz)'
+                : `Artifact (${item.ext || 'file'})`;
+          const artifactDescription =
+            item.ext === '.dcm'
+              ? 'Medical imaging output generated from the current pipeline image and uploaded JSON metadata.'
+              : item.ext === '.npz'
+                ? 'Camera calibration data — berisi matrix kalibrasi, koefisien distorsi, dan parameter kalibrasi lainnya.'
+                : 'Download the generated pipeline artifact.';
+          const downloadLabel = item.ext === '.dcm' ? '💾 Download DICOM' : '💾 Download';
 
           return (
             <div className="output-list-item" key={item.id}>
@@ -108,7 +123,7 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
                 onClick={() => toggleItem(item.id)}
               >
                 <span className={`output-type-icon ${item.type}`}>
-                  {isInput ? '📥' : isNpz ? '📦' : '🖼️'}
+                  {isInput ? '📥' : isImage ? '🖼️' : item.ext === '.dcm' ? '🩻' : '📦'}
                 </span>
                 <span className="output-item-label">{item.label}</span>
                 {item.ext && <span className="output-item-ext">{item.ext}</span>}
@@ -128,21 +143,19 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
                       }}
                     />
                   ) : isNpz ? (
+                  ) : !isImage ? (
                     <div className="npz-preview-content">
-                      <div className="npz-icon-area">📊</div>
+                      <div className="npz-icon-area">{item.ext === '.dcm' ? '🩻' : '📊'}</div>
                       <div className="npz-details">
-                        <div className="npz-title">NumPy Archive (.npz)</div>
-                        <div className="npz-desc">
-                          Camera calibration data — berisi matrix kalibrasi, koefisien distorsi, dan
-                          parameter kalibrasi lainnya.
-                        </div>
+                        <div className="npz-title">{artifactLabel}</div>
+                        <div className="npz-desc">{artifactDescription}</div>
                       </div>
                       <a
                         href={api.outputUrl(item.output_id)}
                         download={`output_${item.index + 1}_${item.output_id}${item.ext}`}
                         className="preview-button"
                       >
-                        💾 Download NPZ
+                        {downloadLabel}
                       </a>
                     </div>
                   ) : (

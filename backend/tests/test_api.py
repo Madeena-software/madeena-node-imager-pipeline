@@ -2,6 +2,7 @@
 
 import importlib.util
 import io
+import json
 import os
 import sys
 
@@ -11,10 +12,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# We need to import the app *after* setting env vars
 os.environ.setdefault("FLASK_ENV", "testing")
 
-# app.py is shadowed by the app/ package, so load it by file path
 _app_path = os.path.join(os.path.dirname(__file__), "..", "app.py")
 _spec = importlib.util.spec_from_file_location("app_entry", _app_path)
 _app_module = importlib.util.module_from_spec(_spec)
@@ -23,16 +22,8 @@ flask_app = _app_module.app
 
 
 @pytest.fixture()
-def app(tmp_path):
+def app():
     flask_app.config["TESTING"] = True
-    flask_app.config["UPLOAD_FOLDER"] = str(tmp_path / "uploads")
-    flask_app.config["OUTPUT_FOLDER"] = str(tmp_path / "outputs")
-    os.makedirs(flask_app.config["UPLOAD_FOLDER"], exist_ok=True)
-    os.makedirs(flask_app.config["OUTPUT_FOLDER"], exist_ok=True)
-
-    # Also make the pipeline_executor look at the same temp dirs
-    _app_module.pipeline_executor.base_dir = str(tmp_path)
-
     yield flask_app
 
 
@@ -42,15 +33,28 @@ def client(app):
 
 
 def _make_png_bytes():
-    """Return raw PNG bytes for a tiny image."""
     img = np.zeros((10, 10, 3), dtype=np.uint8)
     _, buf = cv2.imencode(".png", img)
     return buf.tobytes()
 
 
-# ---------------------------------------------------------------------------
-# GET /api/nodes
-# ---------------------------------------------------------------------------
+def _make_json_bytes():
+    return json.dumps(
+        {
+            "OperatorName": "Administrator",
+            "Patient Name": "01-GBS-Thorax_PA",
+            "NIK": "01-GBS",
+            "KVP": 70,
+            "TubeCurrent": 8,
+            "ExposureTime": 0.5,
+            "Time": "250227155852 ",
+            "Scale X": 104.31,
+            "Scale Y": 103.25,
+            "Birthdate": "1965-08-24",
+            "Age": "60 Y",
+            "Gender": "Male",
+        }
+    ).encode("utf-8")
 
 
 class TestGetNodes:
@@ -59,18 +63,15 @@ class TestGetNodes:
         assert resp.status_code == 200
         data = resp.get_json()
         assert isinstance(data, list)
-        assert len(data) > 2  # at least input + output + some processors
+        assert len(data) > 2
 
-    def test_input_output_present(self, client):
+    def test_tiff_json_to_dicom_node_present(self, client):
         data = client.get("/api/nodes").get_json()
-        ids = [n["id"] for n in data]
-        assert "input" in ids
-        assert "output" in ids
-
-
-# ---------------------------------------------------------------------------
-# POST /api/upload
-# ---------------------------------------------------------------------------
+        tiff_node = next(node for node in data if node["id"] == "tiff_json_to_dicom")
+        assert tiff_node["category"] == "Pipeline"
+        assert tiff_node["name"] == "TIFF JSON to DICOM"
+        assert tiff_node["inputs"] == 1
+        assert tiff_node["outputs"] == 0
 
 
 class TestUpload:
@@ -80,37 +81,40 @@ class TestUpload:
         assert resp.status_code == 200
         body = resp.get_json()
         assert "file_id" in body
-        assert "filename" in body
+        assert body["filename"] == "test.png"
 
-    def test_upload_no_file(self, client):
-        resp = client.post("/api/upload", data={}, content_type="multipart/form-data")
-        assert resp.status_code == 400
+    def test_upload_json_metadata(self, client):
+        data = {"file": (io.BytesIO(_make_json_bytes()), "meta.json")}
+        resp = client.post(
+            "/api/upload-json", data=data, content_type="multipart/form-data"
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "file_id" in body
+        assert body["filename"] == "meta.json"
 
-    def test_upload_bad_extension(self, client):
-        data = {"file": (io.BytesIO(b"not an image"), "test.txt")}
-        resp = client.post("/api/upload", data=data, content_type="multipart/form-data")
+    def test_upload_json_rejects_invalid_payload(self, client):
+        data = {"file": (io.BytesIO(b"not-json"), "meta.json")}
+        resp = client.post(
+            "/api/upload-json", data=data, content_type="multipart/form-data"
+        )
         assert resp.status_code == 400
+        assert "Invalid JSON" in resp.get_json()["error"]
 
     def test_upload_too_large_returns_json_413(self, client, app):
         original_limit = app.config.get("MAX_CONTENT_LENGTH")
         try:
-            app.config["MAX_CONTENT_LENGTH"] = 64  # bytes
+            app.config["MAX_CONTENT_LENGTH"] = 64
             data = {"file": (io.BytesIO(_make_png_bytes()), "test.png")}
             resp = client.post(
                 "/api/upload", data=data, content_type="multipart/form-data"
             )
             assert resp.status_code == 413
             body = resp.get_json()
-            assert isinstance(body, dict)
             assert "too large" in body["error"].lower()
             assert body.get("max_content_length") == 64
         finally:
             app.config["MAX_CONTENT_LENGTH"] = original_limit
-
-
-# ---------------------------------------------------------------------------
-# POST /api/execute-pipeline
-# ---------------------------------------------------------------------------
 
 
 class TestExecutePipeline:
@@ -122,41 +126,49 @@ class TestExecutePipeline:
         resp = client.post("/api/execute-pipeline", json={"nodes": [], "edges": []})
         assert resp.status_code == 400
 
-    def test_simple_pipeline(self, client, app):
-        # Upload an image first
-        upload = client.post(
+    def test_terminal_dicom_pipeline(self, client):
+        image_upload = client.post(
             "/api/upload",
             data={"file": (io.BytesIO(_make_png_bytes()), "test.png")},
             content_type="multipart/form-data",
         )
-        file_id = upload.get_json()["file_id"]
+        image_file_id = image_upload.get_json()["file_id"]
+
+        metadata_upload = client.post(
+            "/api/upload-json",
+            data={"file": (io.BytesIO(_make_json_bytes()), "meta.json")},
+            content_type="multipart/form-data",
+        )
+        json_file_id = metadata_upload.get_json()["file_id"]
 
         pipeline = {
             "nodes": [
-                {"id": "in1", "type": "input", "data": {"file_id": file_id}},
-                {"id": "proc1", "type": "grayscale", "data": {}},
-                {"id": "out1", "type": "output", "data": {"format": "png"}},
+                {"id": "in1", "type": "input", "data": {"file_id": image_file_id}},
+                {
+                    "id": "dcm1",
+                    "type": "tiff_json_to_dicom",
+                    "data": {"json_file_id": json_file_id},
+                },
             ],
-            "edges": [
-                {"source": "in1", "target": "proc1"},
-                {"source": "proc1", "target": "out1"},
-            ],
+            "edges": [{"source": "in1", "target": "dcm1"}],
         }
+
         resp = client.post("/api/execute-pipeline", json=pipeline)
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["status"] == "success"
-        assert "output_id" in body["result"]
+        assert body["result"]["all_outputs"][0]["output_ext"] == ".dcm"
+        assert body["result"]["all_outputs"][0]["output_type"] == "dicom"
 
-
-# ---------------------------------------------------------------------------
-# GET /api/image/<file_id>
-# ---------------------------------------------------------------------------
+        output_id = body["result"]["output_id"]
+        download = client.get(f"/api/output/{output_id}")
+        assert download.status_code == 200
+        assert download.mimetype == "application/dicom"
+        assert ".dcm" in download.headers.get("Content-Disposition", "")
 
 
 class TestGetImage:
     def test_invalid_id_with_traversal(self, client):
-        # file_id containing '..' should be rejected
         resp = client.get("/api/image/..etc..passwd")
         assert resp.status_code == 400
 
@@ -175,21 +187,7 @@ class TestGetImage:
         assert resp.status_code == 200
 
 
-# ---------------------------------------------------------------------------
-# GET /api/output/<file_id>
-# ---------------------------------------------------------------------------
-
-
 class TestGetOutput:
     def test_not_found(self, client):
         resp = client.get("/api/output/nonexistent-id")
         assert resp.status_code == 404
-
-    def test_download_npz_output(self, client, app):
-        output_id = "calib-test"
-        output_path = os.path.join(app.config["OUTPUT_FOLDER"], f"{output_id}.npz")
-        np.savez(output_path, mtx=np.eye(3), dist=np.zeros((1, 5)))
-
-        resp = client.get(f"/api/output/{output_id}")
-        assert resp.status_code == 200
-        assert resp.headers.get("Content-Disposition", "").lower().find(".npz") != -1

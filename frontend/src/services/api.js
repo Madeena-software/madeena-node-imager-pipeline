@@ -29,6 +29,14 @@ const apiService = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  /** Upload JSON metadata for node-specific processing */
+  uploadJson: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload-json', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 
   /** Execute a processing pipeline */
   executePipeline: (pipelineData) => api.post('/execute-pipeline', pipelineData),

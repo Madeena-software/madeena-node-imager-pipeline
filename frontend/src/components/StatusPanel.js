@@ -12,19 +12,31 @@ const StatusPanel = ({ status }) => {
           className={`status-item status-${item.status}`}
         >
           {(() => {
-            const outputExt =
-              item.output_ext || (item.output_type === 'artifact' ? '.npz' : '.png');
-            const isNpz = outputExt === '.npz';
+            const outputExt = item.output_ext || '.png';
+            const outputType = item.output_type || (outputExt === '.png' ? 'image' : 'artifact');
+            const isImage = outputType === 'image';
+            const downloadLabel =
+              outputExt === '.dcm'
+                ? 'Download DICOM'
+                : outputExt === '.npz'
+                  ? 'Download NPZ'
+                  : 'Download';
+            const typeLabel =
+              outputExt === '.dcm'
+                ? 'Type: DICOM Output'
+                : outputExt === '.npz'
+                  ? 'Type: Calibration Artifact'
+                  : 'Type: Image Output';
             return (
               <>
                 {item.message && <div>{item.message}</div>}
                 {item.output_id && (
                   <div>
                     <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>
-                      {isNpz ? 'Type: Calibration Artifact' : 'Type: Image Output'}
+                      {typeLabel}
                       {item.output_name ? ` • File: ${item.output_name}` : ''}
                     </div>
-                    {!isNpz && (
+                    {isImage && (
                       <>
                         <a
                           href={api.imageUrl(item.output_id)}
@@ -42,7 +54,7 @@ const StatusPanel = ({ status }) => {
                       download={`output_${item.output_id}${outputExt}`}
                       style={{ color: '#007acc' }}
                     >
-                      {isNpz ? 'Download NPZ' : 'Download'}
+                      {downloadLabel}
                     </a>
                   </div>
                 )}

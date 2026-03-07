@@ -1,7 +1,8 @@
-import os
-import json
-import uuid
 import datetime
+import io
+import json
+import os
+
 import cv2
 
 try:
@@ -11,32 +12,42 @@ except ImportError as exc:
         "pydicom is not installed. Install it with: pip install pydicom"
     ) from exc
 from pydicom.dataset import FileDataset, FileMetaDataset
-from pydicom.uid import UID, ExplicitVRLittleEndian
+from pydicom.uid import ExplicitVRLittleEndian, UID, generate_uid
 
 
-def tiff_json_to_dcm(tiff_path, json_path, output_path):
-    # Load image
-    image = cv2.imread(tiff_path, -1)
+IMPLEMENTATION_CLASS_UID = UID("1.2.826.0.1.3680043.10.1356.2.1.0.1")
+DX_IMAGE_STORAGE_UID = UID("1.2.840.10008.5.1.4.1.1.1.1.1")
+
+
+def load_metadata(json_path):
+    with open(json_path, "r", encoding="utf-8") as file_handle:
+        return json.load(file_handle)
+
+
+def _normalize_birthdate(value):
+    if not value:
+        return ""
+
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.datetime.strptime(text, fmt).strftime("%Y%m%d")
+        except ValueError:
+            continue
+    return text
+
+
+def create_dicom_dataset(image, meta, output_path="output.dcm"):
     if image is None:
-        raise ValueError(f"Could not read TIFF image: {tiff_path}")
-    imHeight, imWidth = image.shape[:2]
+        raise ValueError("Input image is required")
+
+    im_height, im_width = image.shape[:2]
     pixel_bytes = image.tobytes()
 
-    # Load metadata
-    with open(json_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-
-    # Generate UIDs
-    instanceUID = str(uuid.uuid4()).replace("-", "")
-    studyUID = str(uuid.uuid4()).replace("-", "")
-    seriesUID = str(uuid.uuid4()).replace("-", "")
-    requestUID = str(uuid.uuid4()).replace("-", "")
-
-    # File meta info
     file_meta = FileMetaDataset()
-    file_meta.MediaStorageSOPClassUID = UID("1.2.840.10008.5.1.4.1.1.1.1.1")
-    file_meta.MediaStorageSOPInstanceUID = UID(instanceUID)
-    file_meta.ImplementationClassUID = UID("1.2.826.0.1.3680043.10.1356.2.1.0.1")
+    file_meta.MediaStorageSOPClassUID = DX_IMAGE_STORAGE_UID
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.ImplementationClassUID = IMPLEMENTATION_CLASS_UID
     file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
     file_meta.ImplementationVersionName = "TIFF2DCM_1.0.1"
 
@@ -44,8 +55,8 @@ def tiff_json_to_dcm(tiff_path, json_path, output_path):
     ds.Modality = "DX"
     ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
     ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
-    ds.StudyInstanceUID = studyUID
-    ds.SeriesInstanceUID = seriesUID
+    ds.StudyInstanceUID = generate_uid()
+    ds.SeriesInstanceUID = generate_uid()
     ds.SecondaryCaptureDeviceManufacturer = "Python"
     ds.StudyDescription = meta.get("StudyDescription", "Study")
     ds.SeriesDescription = meta.get("SeriesDescription", "Series")
@@ -66,8 +77,8 @@ def tiff_json_to_dcm(tiff_path, json_path, output_path):
     ds.LargestImagePixelValue = 65535
     ds.WindowCenter = 32768
     ds.WindowWidth = 65536
-    ds.Columns = imWidth
-    ds.Rows = imHeight
+    ds.Columns = im_width
+    ds.Rows = im_height
     ds.NumberOfFrames = 1
     ds.PatientName = meta.get("Patient Name", "Unknown")
     ds.PatientID = meta.get("NIK", "Unknown")
@@ -78,8 +89,8 @@ def tiff_json_to_dcm(tiff_path, json_path, output_path):
         ds.PatientSex = "F"
     else:
         ds.PatientSex = "O"
-    ds.PatientBirthDate = meta.get("Birthdate", "")
-    ds.AccessionNumber = requestUID
+    ds.PatientBirthDate = _normalize_birthdate(meta.get("Birthdate", ""))
+    ds.AccessionNumber = generate_uid().replace(".", "")[:16]
     # Use Time from JSON if available (YYMMDDhhmmss)
     time_str = meta.get("Time", "").strip()
     if len(time_str) >= 12:
@@ -100,9 +111,24 @@ def tiff_json_to_dcm(tiff_path, json_path, output_path):
         ds.StudyDate = ds.ContentDate = dt.strftime("%Y%m%d")
         ds.StudyTime = ds.ContentTime = dt.strftime("%H%M%S")
     ds.PixelData = pixel_bytes
-    ds.is_little_endian = True
-    ds.is_implicit_VR = False
-    ds.save_as(output_path, write_like_original=False)
+    return ds
+
+
+def image_to_dicom_bytes(image, meta, output_name="output.dcm"):
+    dataset = create_dicom_dataset(image, meta, output_path=output_name)
+    buffer = io.BytesIO()
+    dataset.save_as(buffer, enforce_file_format=True)
+    return buffer.getvalue()
+
+
+def tiff_json_to_dcm(tiff_path, json_path, output_path):
+    image = cv2.imread(tiff_path, -1)
+    if image is None:
+        raise ValueError(f"Could not read TIFF image: {tiff_path}")
+
+    meta = load_metadata(json_path)
+    dataset = create_dicom_dataset(image, meta, output_path=output_path)
+    dataset.save_as(output_path, enforce_file_format=True)
     print(f"DICOM file created: {output_path}")
 
 

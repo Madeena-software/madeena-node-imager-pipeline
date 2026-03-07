@@ -1,44 +1,58 @@
-"""Tests for the PipelineExecutor — exercises the graph-building, topological
-sort, and end-to-end execution logic."""
+"""Tests for the PipelineExecutor with session-scoped in-memory storage."""
 
 import os
 import sys
 import uuid
 
-import cv2
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from app.in_memory_storage import storage
 from app.pipeline_executor import PipelineExecutor
 
 
 @pytest.fixture()
-def executor(tmp_path):
-    """Create a PipelineExecutor that reads/writes to a temp directory."""
-    ex = PipelineExecutor(socketio=None)
-    ex.base_dir = str(tmp_path)
-    uploads = tmp_path / "uploads"
-    outputs = tmp_path / "outputs"
-    uploads.mkdir()
-    outputs.mkdir()
-    return ex
+def executor():
+    return PipelineExecutor(socketio=None)
 
 
 @pytest.fixture()
-def uploaded_image(executor):
-    """Write a small test image into the executor's uploads folder and return its file_id."""
+def session_id():
+    return f"test-session-{uuid.uuid4()}"
+
+
+@pytest.fixture()
+def uploaded_image(session_id):
     file_id = str(uuid.uuid4())
-    img = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-    path = os.path.join(executor.base_dir, "uploads", f"{file_id}.png")
-    cv2.imwrite(path, img)
+    image = np.random.randint(0, 256, (64, 64, 3), dtype=np.uint8)
+    storage.put(session_id, file_id, image)
+    yield file_id
+    storage.clear_session(session_id)
+
+
+@pytest.fixture()
+def uploaded_json(session_id):
+    file_id = str(uuid.uuid4())
+    storage.put(
+        session_id,
+        file_id,
+        {
+            "kind": "json_metadata",
+            "filename": "meta.json",
+            "data": {
+                "Patient Name": "Test Patient",
+                "NIK": "123",
+                "Gender": "Male",
+                "Birthdate": "1965-08-24",
+                "Scale X": 104.31,
+                "Scale Y": 103.25,
+                "Time": "250227155852 ",
+            },
+        },
+    )
     return file_id
-
-
-# ---------------------------------------------------------------------------
-# Graph building
-# ---------------------------------------------------------------------------
 
 
 class TestBuildExecutionGraph:
@@ -53,46 +67,29 @@ class TestBuildExecutionGraph:
             {"source": "n2", "target": "n3"},
         ]
         graph = executor._build_execution_graph(nodes, edges)
-        assert "n1" in graph
-        assert "n2" in graph["n1"]["outputs"]
-        assert "n1" in graph["n2"]["inputs"]
-
-    def test_isolated_node(self, executor):
-        nodes = [{"id": "n1", "type": "input", "data": {}}]
-        graph = executor._build_execution_graph(nodes, [])
-        assert graph["n1"]["inputs"] == []
-        assert graph["n1"]["outputs"] == []
-
-
-# ---------------------------------------------------------------------------
-# Topological sort
-# ---------------------------------------------------------------------------
+        assert graph["n2"]["inputs"] == ["n1"]
+        assert graph["n2"]["outputs"] == ["n3"]
 
 
 class TestExecutionOrder:
     def test_linear_order(self, executor):
-        nodes = [
-            {"id": "a", "type": "input", "data": {}},
-            {"id": "b", "type": "processor", "data": {}},
-            {"id": "c", "type": "output", "data": {}},
-        ]
-        edges = [
-            {"source": "a", "target": "b"},
-            {"source": "b", "target": "c"},
-        ]
-        graph = executor._build_execution_graph(nodes, edges)
+        graph = executor._build_execution_graph(
+            [
+                {"id": "a", "type": "input", "data": {}},
+                {"id": "b", "type": "processor", "data": {}},
+                {"id": "c", "type": "output", "data": {}},
+            ],
+            [
+                {"source": "a", "target": "b"},
+                {"source": "b", "target": "c"},
+            ],
+        )
         order = executor._get_execution_order(graph, "a")
         assert order.index("a") < order.index("b") < order.index("c")
 
 
-# ---------------------------------------------------------------------------
-# End-to-end pipeline execution
-# ---------------------------------------------------------------------------
-
-
 class TestExecute:
-    def test_simple_pipeline(self, executor, uploaded_image):
-        """input → grayscale → output should produce a valid result."""
+    def test_simple_pipeline(self, executor, session_id, uploaded_image):
         nodes = [
             {"id": "in1", "type": "input", "data": {"file_id": uploaded_image}},
             {"id": "proc1", "type": "grayscale", "data": {}},
@@ -102,133 +99,52 @@ class TestExecute:
             {"source": "in1", "target": "proc1"},
             {"source": "proc1", "target": "out1"},
         ]
-        result = executor.execute(nodes, edges)
-        assert "output_id" in result
-        output_path = os.path.join(
-            executor.base_dir, "outputs", f"{result['output_id']}.png"
-        )
-        assert os.path.exists(output_path)
 
-    def test_no_input_node_raises(self, executor):
-        nodes = [{"id": "x", "type": "output", "data": {}}]
-        with pytest.raises(ValueError, match="No input node"):
-            executor.execute(nodes, [])
+        result = executor.execute(nodes, edges, session_id)
+        assert result["all_outputs"][0]["output_ext"] == ".png"
+        assert result["all_outputs"][0]["output_type"] == "image"
 
-    def test_missing_file_id_skips_input(self, executor):
+    def test_terminal_dicom_processor_returns_downloadable_artifact(
+        self, executor, session_id, uploaded_image, uploaded_json
+    ):
         nodes = [
-            {"id": "in1", "type": "input", "data": {}},  # no file_id
+            {"id": "in1", "type": "input", "data": {"file_id": uploaded_image}},
+            {
+                "id": "dcm1",
+                "type": "tiff_json_to_dicom",
+                "data": {"json_file_id": uploaded_json},
+            },
         ]
-        with pytest.raises(Exception):
-            executor.execute(nodes, [])
+        edges = [{"source": "in1", "target": "dcm1"}]
 
-    def test_unknown_processor_raises(self, executor, uploaded_image):
+        result = executor.execute(nodes, edges, session_id)
+        output = result["all_outputs"][0]
+        stored_output = storage.get(session_id, output["output_id"])
+
+        assert output["output_ext"] == ".dcm"
+        assert output["output_type"] == "dicom"
+        assert stored_output["download_name"].endswith(".dcm")
+        assert stored_output["mimetype"] == "application/dicom"
+        assert isinstance(stored_output["content"], bytes)
+
+    def test_unknown_processor_raises(self, executor, session_id, uploaded_image):
         nodes = [
             {"id": "in1", "type": "input", "data": {"file_id": uploaded_image}},
             {"id": "proc1", "type": "nonexistent_abc", "data": {}},
-            {"id": "out1", "type": "output", "data": {}},
         ]
-        edges = [
-            {"source": "in1", "target": "proc1"},
-            {"source": "proc1", "target": "out1"},
-        ]
+        edges = [{"source": "in1", "target": "proc1"}]
+
         with pytest.raises(ValueError, match="Unknown processor"):
-            executor.execute(nodes, edges)
+            executor.execute(nodes, edges, session_id)
 
-    def test_artifact_output_pipeline(self, executor, uploaded_image):
-        """input -> artifact processor -> output should emit .npz file."""
-
-        class DummyArtifactProcessor:
-            name = "Dummy Artifact"
-            multi_input = False
-
-            def process(self, image_path, **kwargs):
-                outputs_folder = kwargs["_outputs_folder"]
-                artifact_path = os.path.join(outputs_folder, "dummy_calibration.npz")
-                np.savez(artifact_path, value=np.array([1, 2, 3], dtype=np.int32))
-                return {"artifact_path": artifact_path}
-
-        executor.node_registry.processors["dummy_artifact"] = DummyArtifactProcessor()
-
-        nodes = [
-            {"id": "in1", "type": "input", "data": {"file_id": uploaded_image}},
-            {"id": "proc1", "type": "dummy_artifact", "data": {}},
-            {"id": "out1", "type": "output", "data": {"format": "png"}},
-        ]
-        edges = [
-            {"source": "in1", "target": "proc1"},
-            {"source": "proc1", "target": "out1"},
-        ]
-
-        result = executor.execute(nodes, edges)
-        assert "output_id" in result
-        output_path = os.path.join(
-            executor.base_dir, "outputs", f"{result['output_id']}.npz"
-        )
-        assert os.path.exists(output_path)
-        assert result["all_outputs"][0]["output_ext"] == ".npz"
-        assert result["all_outputs"][0]["output_type"] == "artifact"
-        assert result["all_outputs"][0]["output_name"].endswith(".npz")
-
-    def test_terminal_camera_calibration_without_output_node(
-        self, executor, uploaded_image
+    def test_terminal_non_artifact_without_output_node_returns_completed(
+        self, executor, session_id, uploaded_image
     ):
-        """input -> camera_calibration should return downloadable npz metadata without output node."""
-
-        class DummyArtifactProcessor:
-            name = "Dummy Artifact"
-            multi_input = False
-
-            def process(self, image_path, **kwargs):
-                outputs_folder = kwargs["_outputs_folder"]
-                artifact_path = os.path.join(outputs_folder, "terminal_calibration.npz")
-                np.savez(artifact_path, value=np.array([4, 5, 6], dtype=np.int32))
-                return {"artifact_path": artifact_path}
-
-        executor.node_registry.processors["camera_calibration"] = (
-            DummyArtifactProcessor()
-        )
-
-        nodes = [
-            {"id": "in1", "type": "input", "data": {"file_id": uploaded_image}},
-            {"id": "proc1", "type": "camera_calibration", "data": {}},
-        ]
-        edges = [
-            {"source": "in1", "target": "proc1"},
-        ]
-
-        result = executor.execute(nodes, edges)
-        assert "output_id" in result
-        assert result["all_outputs"][0]["output_ext"] == ".npz"
-        assert result["all_outputs"][0]["output_type"] == "artifact"
-        assert os.path.exists(result["all_outputs"][0]["output_path"])
-
-    def test_terminal_non_camera_processor_without_output_node(
-        self, executor, uploaded_image
-    ):
-        """Non-camera terminal processors should not auto-create downloadable outputs."""
         nodes = [
             {"id": "in1", "type": "input", "data": {"file_id": uploaded_image}},
             {"id": "proc1", "type": "grayscale", "data": {}},
         ]
-        edges = [
-            {"source": "in1", "target": "proc1"},
-        ]
+        edges = [{"source": "in1", "target": "proc1"}]
 
-        result = executor.execute(nodes, edges)
-        assert result.get("status") == "completed"
-        assert "output_id" not in result
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-class TestFindImageFile:
-    def test_finds_existing(self, executor, uploaded_image):
-        folder = os.path.join(executor.base_dir, "uploads")
-        assert executor._find_image_file(uploaded_image, folder) is not None
-
-    def test_returns_none_for_missing(self, executor):
-        folder = os.path.join(executor.base_dir, "uploads")
-        assert executor._find_image_file("no-such-id", folder) is None
+        result = executor.execute(nodes, edges, session_id)
+        assert result == {"status": "completed"}

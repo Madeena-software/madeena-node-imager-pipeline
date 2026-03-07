@@ -52,6 +52,7 @@ from app.processors.pipeline_processors import (
     AdvancedMedianFilterProcessor,
     CameraCalibrationProcessor,
     ApplyCameraCalibrationProcessor,
+    TiffJsonToDICOMProcessor,
 )
 
 
@@ -118,6 +119,7 @@ class NodeRegistry:
             "advanced_median_filter": AdvancedMedianFilterProcessor(),
             "camera_calibration": CameraCalibrationProcessor(),
             "apply_camera_calibration": ApplyCameraCalibrationProcessor(),
+            "tiff_json_to_dicom": TiffJsonToDICOMProcessor(),
         }
 
     def get_all_nodes(self):
@@ -199,12 +201,14 @@ class NodeRegistry:
             "advanced_median_filter": "Pipeline",
             "camera_calibration": "Pipeline",
             "apply_camera_calibration": "Pipeline",
+            "tiff_json_to_dicom": "Pipeline",
         }
 
         for key, processor in self.processors.items():
             # Check if this is a multi-input processor
             is_multi_input = hasattr(processor, "multi_input") and processor.multi_input
             input_count = len(processor.input_slots) if is_multi_input else 1
+            output_count = getattr(processor, "output_count", 1)
 
             node_data = {
                 "id": key,
@@ -214,7 +218,7 @@ class NodeRegistry:
                 "category": processor_categories.get(key, "Other"),
                 "parameters": processor.parameters,
                 "inputs": input_count,
-                "outputs": 1,
+                "outputs": output_count,
             }
 
             # Add input_slots metadata for multi-input nodes
