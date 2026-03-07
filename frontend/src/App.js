@@ -472,7 +472,6 @@ function App() {
                 filename: response.data.filename,
                 // Preserve the handlers
                 onDelete: node.data.onDelete,
-                onDoubleClick: node.data.onDoubleClick,
               },
             };
           }
