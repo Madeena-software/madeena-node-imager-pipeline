@@ -24,9 +24,9 @@ def load_calibration_config():
         # Default values
         "CALIBRATION_IMAGE_PATH": "",
         "CALIBRATION_OUTPUT_NPZ": "camera_calibration.npz",
-        "CALIBRATION_PATTERN_COLS": 44,
-        "CALIBRATION_PATTERN_ROWS": 35,
-        "CALIBRATION_CIRCLE_DIAMETER": 1.0,
+        "CALIBRATION_PATTERN_COLS": 27,
+        "CALIBRATION_PATTERN_ROWS": 18,
+        "CALIBRATION_CIRCLE_DIAMETER": 40.0,
         "CALIBRATION_CUSTOM_ROI_X": None,
         "CALIBRATION_CUSTOM_ROI_Y": None,
         "CALIBRATION_CUSTOM_ROI_W": None,

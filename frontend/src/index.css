@@ -315,6 +315,10 @@ code {
   border-left: 3px solid var(--error-color);
 }
 
+.status-log {
+  border-left: 3px solid #555;
+}
+
 .app-loading-overlay {
   position: fixed;
   inset: 0;

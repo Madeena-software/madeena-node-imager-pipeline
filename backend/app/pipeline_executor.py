@@ -1,9 +1,11 @@
 """Pipeline executor — runs a connected graph of image processing nodes."""
 
 import os
+import io
 import uuid
 import logging
 import shutil
+from contextlib import redirect_stdout
 
 import cv2
 import numpy as np
@@ -265,9 +267,21 @@ class PipelineExecutor:
 
                         # Process with multiple inputs
                         if hasattr(processor, "process_multi"):
-                            processed_image = processor.process_multi(
-                                images_dict, **processor_kwargs
-                            )
+                            _buf_multi = io.StringIO()
+                            with redirect_stdout(_buf_multi):
+                                processed_image = processor.process_multi(
+                                    images_dict, **processor_kwargs
+                                )
+                            _log_multi = _buf_multi.getvalue().strip()
+                            if self.socketio and _log_multi:
+                                self.socketio.emit(
+                                    "pipeline_progress",
+                                    {
+                                        "node_id": node["id"],
+                                        "status": "log",
+                                        "message": _log_multi,
+                                    },
+                                )
                         else:
                             raise TypeError(
                                 f"Processor {processor.name} claims multi_input but has no process_multi method"
@@ -281,9 +295,21 @@ class PipelineExecutor:
                                 f"No image available from source node {upstream_ids[0]}"
                             )
 
-                        processed_image = processor.process(
-                            source_image, **processor_kwargs
-                        )
+                        _buf_single = io.StringIO()
+                        with redirect_stdout(_buf_single):
+                            processed_image = processor.process(
+                                source_image, **processor_kwargs
+                            )
+                        _log_single = _buf_single.getvalue().strip()
+                        if self.socketio and _log_single:
+                            self.socketio.emit(
+                                "pipeline_progress",
+                                {
+                                    "node_id": node["id"],
+                                    "status": "log",
+                                    "message": _log_single,
+                                },
+                            )
 
                     preview_id = None
                     if isinstance(processed_image, np.ndarray):

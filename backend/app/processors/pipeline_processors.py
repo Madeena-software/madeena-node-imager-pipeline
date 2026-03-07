@@ -5,6 +5,7 @@ These wrap the actual processing functions from the imager-pipeline project.
 
 import sys
 import os
+import io
 import uuid
 import cv2
 import numpy as np
@@ -639,25 +640,25 @@ class CameraCalibrationProcessor(ImageProcessor):
         self.parameters = {
             "pattern_cols": {
                 "type": "number",
-                "default": 44,
+                "default": 27,
                 "min": 1,
                 "max": 200,
                 "description": "Circle-grid columns",
             },
             "pattern_rows": {
                 "type": "number",
-                "default": 35,
+                "default": 18,
                 "min": 1,
                 "max": 200,
                 "description": "Circle-grid rows",
             },
             "circle_diameter": {
                 "type": "number",
-                "default": 1.0,
+                "default": 40.0,
                 "min": 0.0001,
                 "max": 100000.0,
                 "step": 0.1,
-                "description": "Real-world circle diameter",
+                "description": "Pixel circle diameter",
             },
             "roi_x": {
                 "type": "number",
@@ -705,9 +706,9 @@ class CameraCalibrationProcessor(ImageProcessor):
         }
 
     def process(self, image, **kwargs):
-        pattern_cols = int(kwargs.get("pattern_cols", 44))
-        pattern_rows = int(kwargs.get("pattern_rows", 35))
-        circle_diameter = float(kwargs.get("circle_diameter", 1.0))
+        pattern_cols = int(kwargs.get("pattern_cols", 27))
+        pattern_rows = int(kwargs.get("pattern_rows", 18))
+        circle_diameter = float(kwargs.get("circle_diameter", 40.0))
 
         roi_x = _to_optional_int(kwargs.get("roi_x", -1))
         roi_y = _to_optional_int(kwargs.get("roi_y", -1))
@@ -731,7 +732,29 @@ class CameraCalibrationProcessor(ImageProcessor):
         if not calibration_data:
             raise ValueError("Camera calibration failed; could not generate artifact")
 
-        return {"artifact": calibration_data}
+        # Serialize calibration dict to .npz bytes for artifact storage
+        buf = io.BytesIO()
+        np.savez_compressed(
+            buf,
+            mtx=calibration_data["mtx"],
+            dist=calibration_data["dist"],
+            newcameramtx=calibration_data["newcameramtx"],
+            image_size=np.array(calibration_data["image_size"]),
+            pattern_size=np.array(calibration_data["pattern_size"]),
+            circle_diameter=np.array([calibration_data["circle_diameter"]]),
+        )
+        npz_bytes = buf.getvalue()
+
+        output_filename = kwargs.get("output_filename", "camera_calibration.npz")
+
+        return {
+            "artifact": npz_bytes,
+            "output_ext": ".npz",
+            "output_type": "calibration",
+            "mime_type": "application/octet-stream",
+            "output_name": output_filename,
+            "_calibration_data": calibration_data,  # raw dict for downstream nodes
+        }
 
 
 # =============================================================================
@@ -762,14 +785,23 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
 
     def process_multi(self, images_dict, **kwargs):
         image = images_dict.get("image")
-        calibration_data = images_dict.get("calibration_npz")
+        calibration_input = images_dict.get("calibration_npz")
 
         if image is None:
             raise ValueError("Apply Camera Calibration requires 'image' input")
-        if calibration_data is None:
+        if calibration_input is None:
             raise ValueError(
                 "Apply Camera Calibration requires 'calibration_npz' input"
             )
+
+        # Unwrap raw calibration dict from artifact descriptor if present
+        if (
+            isinstance(calibration_input, dict)
+            and "_calibration_data" in calibration_input
+        ):
+            calibration_data = calibration_input["_calibration_data"]
+        else:
+            calibration_data = calibration_input
 
         alpha = float(kwargs.get("alpha", 0.0))
         crop_to_roi = bool(kwargs.get("crop_to_roi", True))
