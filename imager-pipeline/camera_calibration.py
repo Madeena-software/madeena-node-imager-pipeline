@@ -89,20 +89,67 @@ class CameraCalibrator:
 
     def __init__(
         self,
-        pattern_size=(44, 35),
-        circle_diameter=1.0,
+        pattern_size=None,
+        circle_diameter=None,
     ):
         """
         Initialize the calibrator.
 
         Args:
-            pattern_size: Tuple (cols, rows) of circles in the calibration pattern
-            circle_diameter: Real-world diameter of each circle (in mm or any unit)
+            pattern_size: Tuple (cols, rows) of circles in the calibration pattern. If None, auto-detect.
+            circle_diameter: Real-world diameter of each circle. If None, auto-detect.
         """
         self.pattern_size = pattern_size
         self.circle_diameter = circle_diameter
-        self.objp = self._create_object_points()
+        self.objp = None  # Will be created once pattern size is known
         self.blob_detectors = self._create_blob_detectors()
+
+    def _find_factors(self, n):
+        """Find pairs of factors for a number, sorted by closeness."""
+        factors = []
+        for i in range(1, int(np.sqrt(n)) + 1):
+            if n % i == 0:
+                factors.append((n // i, i))
+        return sorted(factors, key=lambda p: abs(p[0] - p[1]))
+
+    def _detect_grid_properties(self, image):
+        """Auto-detect grid properties using blob detection."""
+        if len(image.shape) > 2:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+
+        # Simple blob detector to find circles
+        params = cv2.SimpleBlobDetector_Params()
+        params.filterByArea = True
+        params.minArea = 10
+        params.filterByCircularity = True
+        params.minCircularity = 0.7
+        params.filterByConvexity = True
+        params.minConvexity = 0.8
+        params.filterByInertia = True
+        params.minInertiaRatio = 0.4
+
+        # Try both inverted and normal thresholds
+        for invert in [True, False]:
+            detector = cv2.SimpleBlobDetector_create(params)
+            keypoints = detector.detect(gray if not invert else ~gray)
+
+            if len(keypoints) > 10:  # Need a reasonable number of points
+                avg_diameter = np.mean([kp.size for kp in keypoints])
+
+                # Infer grid size
+                factor_pairs = self._find_factors(len(keypoints))
+                if factor_pairs:
+                    # Choose the most 'grid-like' factor pair
+                    pattern_size = factor_pairs[0]
+
+                    print(
+                        f"Auto-detected pattern: {pattern_size} with ~{avg_diameter:.2f}px circles"
+                    )
+                    return pattern_size, avg_diameter
+
+        return None, None
 
     def _try_find_grid(self, img, label):
         """Try ordered circle-grid extraction on one image."""
@@ -311,6 +358,8 @@ class CameraCalibrator:
 
     def _create_object_points(self):
         """Create 3D object points for the circle grid pattern."""
+        if not self.pattern_size or not self.circle_diameter:
+            return None
         objp = np.zeros((self.pattern_size[0] * self.pattern_size[1], 3), np.float32)
         objp[:, :2] = np.mgrid[
             0 : self.pattern_size[0], 0 : self.pattern_size[1]
@@ -381,14 +430,34 @@ class CameraCalibrator:
             img = image.copy()
 
         if img is None:
-            print("Error: Could not load calibration image")
-            return None
+            raise ValueError("Could not load calibration image")
+
+        # Auto-detect parameters if not provided
+        if self.pattern_size is None or self.circle_diameter is None:
+            print("Attempting to auto-detect calibration parameters...")
+            detected_pattern, detected_diameter = self._detect_grid_properties(img)
+            if detected_pattern and detected_diameter:
+                self.pattern_size = detected_pattern
+                self.circle_diameter = detected_diameter
+            else:
+                raise ValueError(
+                    "Automatic parameter detection failed. "
+                    "Please uncheck 'auto-detect' and manually enter the grid size "
+                    "(columns/rows) and circle diameter."
+                )
+
+        # Now that we have pattern size, create object points
+        self.objp = self._create_object_points()
+        if self.objp is None:
+            raise ValueError("Could not create object points for calibration.")
 
         # Detect circles
         ret, centers = self.detect_circles(img)
         if not ret:
-            print("Error: Could not detect circle pattern in calibration image")
-            return None
+            raise ValueError(
+                "Could not detect circle pattern. Check image quality or "
+                "manually specify grid size if auto-detection is off."
+            )
 
         # Get image dimensions
         img_size = (img.shape[1], img.shape[0])  # (width, height)
@@ -405,8 +474,7 @@ class CameraCalibrator:
         )
 
         if not ret:
-            print("Error: Camera calibration failed")
-            return None
+            raise ValueError("Camera calibration failed internally.")
 
         print("✓ Camera calibration successful")
         print(f"Camera matrix:\n{mtx}")
@@ -418,6 +486,11 @@ class CameraCalibrator:
 
         # Use custom ROI if provided, otherwise use calculated ROI
         final_roi = roi_crop if roi_crop is not None else roi
+
+        # If auto-calculating ROI, ensure it is valid
+        if roi_crop is None and (roi[2] == 0 or roi[3] == 0):
+            print("Auto-calculated ROI is empty, falling back to full image size.")
+            final_roi = (0, 0, w, h)
 
         print(f"Optimal new camera matrix:\n{newcameramtx}")
         print(f"ROI for cropping: {final_roi}")
@@ -597,8 +670,6 @@ def main():
     calibration_image = config["CALIBRATION_IMAGE_PATH"]
     if not calibration_image:
         print("Error: CALIBRATION_IMAGE_PATH not set in .env file")
-        print("Please set the path to your calibration image with circle grid pattern")
-        print("Example: CALIBRATION_IMAGE_PATH=path/to/calibration_image.tiff")
         return False
 
     if not Path(calibration_image).exists():
@@ -606,18 +677,25 @@ def main():
         return False
 
     output_npz = config["CALIBRATION_OUTPUT_NPZ"]
+    auto_detect = config.get("CALIBRATION_AUTO_DETECT", False)
 
     # Print configuration
     print(f"Configuration:")
     print(f"  Calibration image: {calibration_image}")
     print(f"  Output NPZ file:   {output_npz}")
-    print(
-        f"  Pattern size:      {config['CALIBRATION_PATTERN_COLS']}x{config['CALIBRATION_PATTERN_ROWS']} circles"
-    )
-    print(f"  Circle diameter:   {config['CALIBRATION_CIRCLE_DIAMETER']}")
-    print(
-        f"  Circle tolerance:  ±{int(CameraCalibrator.CIRCLE_DIAMETER_TOLERANCE * 100)}%"
-    )
+    print(f"  Auto-detect params: {auto_detect}")
+
+    pattern_size = None
+    circle_diameter = None
+
+    if not auto_detect:
+        pattern_size = (
+            config["CALIBRATION_PATTERN_COLS"],
+            config["CALIBRATION_PATTERN_ROWS"],
+        )
+        circle_diameter = config["CALIBRATION_CIRCLE_DIAMETER"]
+        print(f"  Pattern size:      {pattern_size[0]}x{pattern_size[1]} circles")
+        print(f"  Circle diameter:   {circle_diameter}")
 
     # Build custom ROI if all values are provided
     custom_roi = None
@@ -633,29 +711,32 @@ def main():
     else:
         print(f"  Custom ROI:        Auto-calculated")
 
-    print(f"  Undistort alpha:   {config['CALIBRATION_UNDISTORT_ALPHA']}")
-    print(f"  Test enabled:      {config['CALIBRATION_TEST_ENABLED']}")
     print("=" * 70)
 
     # Create calibrator
     calibrator = CameraCalibrator(
-        pattern_size=(
-            config["CALIBRATION_PATTERN_COLS"],
-            config["CALIBRATION_PATTERN_ROWS"],
-        ),
-        circle_diameter=config["CALIBRATION_CIRCLE_DIAMETER"],
+        pattern_size=pattern_size,
+        circle_diameter=circle_diameter,
     )
 
     # Perform calibration
-    success = calibrator.calibrate_from_image(
-        calibration_image, output_npz, roi_crop=custom_roi
-    )
+    try:
+        success = calibrator.calibrate_from_image(
+            calibration_image, output_npz, roi_crop=custom_roi
+        )
+        if success:
+            print("\n✓ Calibration completed successfully!")
+            if auto_detect:
+                print(f"  Detected Pattern: {calibrator.pattern_size}")
+                print(f"  Detected Diameter: {calibrator.circle_diameter:.2f}px")
 
-    if not success:
-        print("\nCalibration failed!")
+        else:
+            print("\n✗ Calibration failed!")
+            return False
+
+    except ValueError as e:
+        print(f"\nERROR: {e}")
         return False
-
-    print("\nCalibration completed successfully!")
 
     # Test calibration if enabled
     if config["CALIBRATION_TEST_ENABLED"]:

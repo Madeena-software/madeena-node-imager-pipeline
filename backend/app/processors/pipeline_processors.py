@@ -3,6 +3,7 @@ Pipeline processors - Nodes that import directly from imager-pipeline.
 These wrap the actual processing functions from the imager-pipeline project.
 """
 
+import base64
 import sys
 import os
 import io
@@ -638,19 +639,24 @@ class CameraCalibrationProcessor(ImageProcessor):
             "Generate camera calibration .npz from circle-grid calibration image"
         )
         self.parameters = {
+            "auto_detect_params": {
+                "type": "boolean",
+                "default": True,
+                "description": "Auto-detect grid size and circle diameter from image",
+            },
             "pattern_cols": {
                 "type": "number",
                 "default": 27,
                 "min": 1,
                 "max": 200,
-                "description": "Circle-grid columns",
+                "description": "Circle-grid columns (if auto-detect is off)",
             },
             "pattern_rows": {
                 "type": "number",
                 "default": 18,
                 "min": 1,
                 "max": 200,
-                "description": "Circle-grid rows",
+                "description": "Circle-grid rows (if auto-detect is off)",
             },
             "circle_diameter": {
                 "type": "number",
@@ -658,7 +664,7 @@ class CameraCalibrationProcessor(ImageProcessor):
                 "min": 0.0001,
                 "max": 100000.0,
                 "step": 0.1,
-                "description": "Pixel circle diameter",
+                "description": "Pixel circle diameter (if auto-detect is off)",
             },
             "roi_x": {
                 "type": "number",
@@ -693,22 +699,21 @@ class CameraCalibrationProcessor(ImageProcessor):
                 "default": "camera_calibration.npz",
                 "description": "Output .npz filename",
             },
-            "run_test": {
-                "type": "boolean",
-                "default": False,
-                "description": "Save undistortion test image",
-            },
-            "test_output_filename": {
-                "type": "string",
-                "default": "",
-                "description": "Optional undistort test image filename",
-            },
         }
 
     def process(self, image, **kwargs):
-        pattern_cols = int(kwargs.get("pattern_cols", 27))
-        pattern_rows = int(kwargs.get("pattern_rows", 18))
-        circle_diameter = float(kwargs.get("circle_diameter", 40.0))
+        auto_detect = kwargs.get("auto_detect_params", True)
+        
+        pattern_cols = None
+        pattern_rows = None
+        circle_diameter = None
+        pattern_size = None
+
+        if not auto_detect:
+            pattern_cols = int(kwargs.get("pattern_cols", 27))
+            pattern_rows = int(kwargs.get("pattern_rows", 18))
+            circle_diameter = float(kwargs.get("circle_diameter", 40.0))
+            pattern_size = (pattern_cols, pattern_rows)
 
         roi_x = _to_optional_int(kwargs.get("roi_x", -1))
         roi_y = _to_optional_int(kwargs.get("roi_y", -1))
@@ -721,13 +726,16 @@ class CameraCalibrationProcessor(ImageProcessor):
         )
 
         calibrator = CameraCalibrator(
-            pattern_size=(pattern_cols, pattern_rows),
+            pattern_size=pattern_size,
             circle_diameter=circle_diameter,
         )
 
-        calibration_data = calibrator.calibrate_from_image_in_memory(
-            image, roi_crop=custom_roi
-        )
+        try:
+            calibration_data = calibrator.calibrate_from_image_in_memory(
+                image, roi_crop=custom_roi
+            )
+        except Exception as e:
+            raise ValueError(f"Calibration failed: {e}")
 
         if not calibration_data:
             raise ValueError("Camera calibration failed; could not generate artifact")
@@ -741,7 +749,7 @@ class CameraCalibrationProcessor(ImageProcessor):
             newcameramtx=calibration_data["newcameramtx"],
             image_size=np.array(calibration_data["image_size"]),
             pattern_size=np.array(calibration_data["pattern_size"]),
-            circle_diameter=np.array([calibration_data["circle_diameter"]]),
+            circle_diameter=np.array(calibration_data["circle_diameter"]),
         )
         npz_bytes = buf.getvalue()
 
@@ -764,8 +772,13 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
     def __init__(self):
         super().__init__()
         self.name = "Apply Camera Calibration"
-        self.description = "Undistort image using calibration .npz"
+        self.description = "Undistort image using an uploaded calibration .npz file"
         self.parameters = {
+            "calibration_file": {
+                "type": "file",
+                "file_filter": ".npz",
+                "description": "Upload camera calibration .npz file",
+            },
             "alpha": {
                 "type": "number",
                 "default": 0.0,
@@ -780,31 +793,27 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
                 "description": "Crop output to valid ROI",
             },
         }
-        self.multi_input = True
-        self.input_slots = ["image", "calibration_npz"]
 
-    def process_multi(self, images_dict, **kwargs):
-        image = images_dict.get("image")
-        calibration_input = images_dict.get("calibration_npz")
-
-        if image is None:
-            raise ValueError("Apply Camera Calibration requires 'image' input")
-        if calibration_input is None:
+    def process(self, image, **kwargs):
+        calibration_file_b64 = kwargs.get("calibration_file")
+        if not calibration_file_b64:
             raise ValueError(
-                "Apply Camera Calibration requires 'calibration_npz' input"
+                "Apply Camera Calibration requires an uploaded .npz calibration file."
             )
 
-        # Unwrap raw calibration dict from artifact descriptor if present
-        if (
-            isinstance(calibration_input, dict)
-            and "_calibration_data" in calibration_input
-        ):
-            calibration_data = calibration_input["_calibration_data"]
-        else:
-            calibration_data = calibration_input
+        try:
+            # The frontend sends a data URL like "data:application/octet-stream;base64,..."
+            header, encoded = calibration_file_b64.split(",", 1)
+            decoded_bytes = base64.b64decode(encoded)
+            
+            with io.BytesIO(decoded_bytes) as buf:
+                calibration_data = np.load(buf)
+        except (ValueError, TypeError, base64.binascii.Error) as e:
+            raise ValueError(f"Failed to decode or load calibration file: {e}")
 
         alpha = float(kwargs.get("alpha", 0.0))
         crop_to_roi = bool(kwargs.get("crop_to_roi", True))
+        
         result = undistort_image(
             image,
             calibration_data,
@@ -815,9 +824,6 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
         if len(result.shape) == 2:
             result = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
         return result
-
-    def process(self, image, **kwargs):
-        return image
 
 
 # =============================================================================

@@ -12,6 +12,7 @@ const NodePropertiesModal = ({
   const [parameters, setParameters] = useState({});
   const [nodeInfo, setNodeInfo] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [fileParameterFilenames, setFileParameterFilenames] = useState({});
   const [nodeAttachmentData, setNodeAttachmentData] = useState({
     json_file_id: null,
     json_filename: '',
@@ -21,6 +22,7 @@ const NodePropertiesModal = ({
     if (isOpen && node) {
       // Initialize parameters with current values or defaults
       setParameters(node.data.parameters || {});
+      setFileParameterFilenames({});
       setNodeAttachmentData({
         json_file_id: node.data.json_file_id || null,
         json_filename: node.data.json_filename || '',
@@ -37,6 +39,44 @@ const NodePropertiesModal = ({
       ...prev,
       [paramName]: value,
     }));
+  };
+
+  const handleFileUpload = async (event, paramName, paramConfig) => {
+    const file = event.target.files?.[0];
+    event.target.value = ''; // Reset file input
+    if (!file) return;
+
+    if (paramConfig.file_filter) {
+      const lowerCaseFileName = file.name.toLowerCase();
+      const filters = paramConfig.file_filter.split(',').map((f) => f.trim());
+      if (!filters.some((f) => lowerCaseFileName.endsWith(f))) {
+        alert(`Please select a ${paramConfig.file_filter} file.`);
+        return;
+      }
+    }
+
+    setIsUploading(true);
+    onUploadingChange?.(true);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64String = e.target.result;
+        handleParameterChange(paramName, base64String);
+        setFileParameterFilenames((prev) => ({ ...prev, [paramName]: file.name }));
+      };
+      reader.onerror = (error) => {
+        console.error('File reading failed:', error);
+        alert('Failed to read file.');
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('File upload failed:', error);
+      alert('File upload failed');
+    } finally {
+      setIsUploading(false);
+      onUploadingChange?.(false);
+    }
   };
 
   const handleSave = () => {
@@ -58,6 +98,7 @@ const NodePropertiesModal = ({
         defaultParams[key] = config.default;
       });
       setParameters(defaultParams);
+      setFileParameterFilenames({});
     }
   };
 
@@ -135,6 +176,38 @@ const NodePropertiesModal = ({
     const value = parameters[paramName] ?? paramConfig.default ?? '';
 
     switch (paramConfig.type) {
+      case 'file':
+        const currentFilename =
+          fileParameterFilenames[paramName] || (value ? 'File previously uploaded' : '');
+        return (
+          <div className="parameter-input-group">
+            {currentFilename && (
+              <div className="current-file">
+                <strong>Current file:</strong> {currentFilename}
+              </div>
+            )}
+            <input
+              type="file"
+              accept={paramConfig.file_filter || '*/*'}
+              onChange={(e) => handleFileUpload(e, paramName, paramConfig)}
+              disabled={isUploading}
+              className="parameter-input text-input"
+            />
+            {value && (
+              <button
+                className="reset-button"
+                onClick={() => {
+                  handleParameterChange(paramName, null);
+                  setFileParameterFilenames((prev) => ({ ...prev, [paramName]: null }));
+                }}
+                disabled={isUploading}
+              >
+                Remove File
+              </button>
+            )}
+          </div>
+        );
+
       case 'number':
         return (
           <div className="parameter-input-group">
