@@ -22,6 +22,10 @@ from werkzeug.utils import secure_filename
 from app.node_registry import NodeRegistry
 from app.pipeline_executor import PipelineExecutor
 from app.in_memory_storage import storage
+from app.custom_node_service import (
+    CustomNodeValidationError,
+    ensure_custom_node_directory,
+)
 from config import get_config
 
 # ---------------------------------------------------------------------------
@@ -58,8 +62,8 @@ if socketio_async_mode:
 socketio = SocketIO(app, **socketio_kwargs)
 
 # Components
-node_registry = NodeRegistry()
-pipeline_executor = PipelineExecutor(socketio)
+node_registry = NodeRegistry(custom_node_dir=_config.CUSTOM_NODE_UPLOAD_DIR)
+pipeline_executor = PipelineExecutor(socketio, node_registry=node_registry)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -98,6 +102,11 @@ def _allowed_npz_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() == "npz"
 
 
+def _allowed_python_file(filename: str) -> bool:
+    """Return True if *filename* has a .py extension."""
+    return "." in filename and filename.rsplit(".", 1)[1].lower() == "py"
+
+
 def _format_bytes(byte_count: int) -> str:
     """Format bytes as a readable string (B/KB/MB/GB)."""
     value = float(max(0, byte_count))
@@ -107,6 +116,91 @@ def _format_bytes(byte_count: int) -> str:
         value /= 1024.0
         unit_index += 1
     return f"{value:.1f} {units[unit_index]}"
+
+
+def _sanitize_custom_category(raw_value: str | None) -> str:
+    """Normalize category input for custom uploaded nodes."""
+    category = (raw_value or "").strip()
+    if not category:
+        raise ValueError("kategori_grup is required")
+    if len(category) > 80:
+        raise ValueError("kategori_grup is too long (max 80 characters)")
+    return category
+
+
+def _register_uploaded_custom_node(file_storage, kategori_grup: str):
+    """Persist, validate, and register an uploaded custom node module safely."""
+    ensure_custom_node_directory(app.config["CUSTOM_NODE_UPLOAD_DIR"])
+
+    safe_name = secure_filename(file_storage.filename or "")
+    if not safe_name:
+        raise ValueError("Filename is invalid after sanitization")
+    if not _allowed_python_file(safe_name):
+        raise ValueError("Invalid file type. Supported: .py")
+
+    custom_dir = app.config["CUSTOM_NODE_UPLOAD_DIR"]
+    target_path = os.path.abspath(os.path.join(custom_dir, safe_name))
+    temp_path = os.path.abspath(
+        os.path.join(custom_dir, f".{uuid.uuid4().hex}-{safe_name}.tmp")
+    )
+    backup_path = None
+    previous_category = node_registry.get_source_category(target_path)
+
+    try:
+        file_storage.save(temp_path)
+
+        if os.path.getsize(temp_path) == 0:
+            raise ValueError("Uploaded Python file is empty")
+
+        if os.path.exists(target_path):
+            backup_path = os.path.abspath(
+                os.path.join(custom_dir, f".{uuid.uuid4().hex}-{safe_name}.bak")
+            )
+            shutil.copy2(target_path, backup_path)
+
+        os.replace(temp_path, target_path)
+        registration_result = node_registry.register_custom_module(
+            target_path, kategori_grup
+        )
+        node_registry.save_custom_category_metadata(target_path, kategori_grup)
+        return {
+            "filename": safe_name,
+            "path": target_path,
+            **registration_result,
+        }
+    except Exception:
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except OSError:
+                logger.warning(
+                    "Could not remove invalid custom node file %s", target_path
+                )
+        node_registry.remove_custom_metadata(target_path)
+
+        if backup_path and os.path.exists(backup_path):
+            os.replace(backup_path, target_path)
+            try:
+                node_registry.register_custom_module(
+                    target_path,
+                    previous_category or _sanitize_custom_category(kategori_grup),
+                )
+                node_registry.save_custom_category_metadata(
+                    target_path,
+                    previous_category or _sanitize_custom_category(kategori_grup),
+                )
+            except Exception as rollback_exc:
+                logger.error(
+                    "Rollback of previous custom node file failed: %s",
+                    rollback_exc,
+                    exc_info=True,
+                )
+        raise
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        if backup_path and os.path.exists(backup_path):
+            os.remove(backup_path)
 
 
 def _should_start_frontend() -> bool:
@@ -257,6 +351,69 @@ def handle_request_entity_too_large(_error):
 def get_available_nodes():
     """Return metadata for every available processing node."""
     return jsonify(node_registry.get_all_nodes())
+
+
+@app.route("/api/custom-nodes/template", methods=["GET"])
+def download_custom_node_template():
+    """Download the reference template for custom processor nodes."""
+    template_path = app.config["CUSTOM_NODE_TEMPLATE_PATH"]
+    if not os.path.isfile(template_path):
+        logger.error("Custom node template not found: %s", template_path)
+        return jsonify({"error": "Custom node template is not available"}), 500
+
+    return send_file(
+        template_path,
+        mimetype="text/x-python",
+        as_attachment=True,
+        download_name="template_node.py",
+    )
+
+
+@app.route("/api/custom-nodes/upload", methods=["POST"])
+def upload_custom_node():
+    """Upload a custom Python processor module and register it dynamically."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No file selected"}), 400
+
+    try:
+        kategori_grup = _sanitize_custom_category(request.form.get("kategori_grup"))
+        result = _register_uploaded_custom_node(file, kategori_grup)
+    except (ValueError, CustomNodeValidationError, SyntaxError, ImportError) as exc:
+        logger.warning("Custom node upload rejected: %s", exc)
+        return (
+            jsonify(
+                {
+                    "error": "Custom node upload failed",
+                    "message": str(exc),
+                }
+            ),
+            400,
+        )
+    except Exception as exc:
+        logger.error("Unexpected custom node upload failure: %s", exc, exc_info=True)
+        return (
+            jsonify(
+                {
+                    "error": "Custom node upload failed",
+                    "message": str(exc),
+                }
+            ),
+            400,
+        )
+
+    return jsonify(
+        {
+            "status": "success",
+            "filename": result["filename"],
+            "category": result["category"],
+            "registered_node_ids": result["registered_ids"],
+            "warnings": result["warnings"],
+        }
+    )
 
 
 @app.route("/api/upload", methods=["POST"])

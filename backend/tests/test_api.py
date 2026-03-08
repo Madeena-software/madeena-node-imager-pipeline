@@ -22,9 +22,19 @@ flask_app = _app_module.app
 
 
 @pytest.fixture()
-def app():
+def app(tmp_path):
     flask_app.config["TESTING"] = True
+    custom_node_dir = tmp_path / "custom_nodes"
+    custom_node_dir.mkdir(parents=True, exist_ok=True)
+    flask_app.config["CUSTOM_NODE_UPLOAD_DIR"] = str(custom_node_dir)
+    existing_sources = set(_app_module.node_registry.source_to_processor_ids.keys())
     yield flask_app
+
+    new_sources = (
+        set(_app_module.node_registry.source_to_processor_ids.keys()) - existing_sources
+    )
+    for source in list(new_sources):
+        _app_module.node_registry.unregister_source(source)
 
 
 @pytest.fixture()
@@ -57,6 +67,45 @@ def _make_json_bytes():
     ).encode("utf-8")
 
 
+def _make_valid_custom_node_bytes():
+    return b"""
+from app.processors.base_processor import ImageProcessor
+
+
+class UploadedDemoProcessor(ImageProcessor):
+    def __init__(self):
+        super().__init__()
+        self.processor_id = "uploaded_demo"
+        self.name = "Uploaded Demo"
+        self.description = "Dynamically uploaded processor"
+        self.parameters = {
+            "metadata_file": {
+                "type": "file",
+                "required": False,
+                "default": None,
+                "file_filter": ".json",
+                "file_id_field": "metadata_file_id",
+                "filename_field": "metadata_filename",
+                "resolved_data_field": "metadata_json",
+                "resolved_filename_field": "metadata_filename",
+                "upload_action": "json",
+                "description": "Optional metadata upload",
+            }
+        }
+
+    def process(self, image, **kwargs):
+        return image
+"""
+
+
+def _make_invalid_custom_node_bytes():
+    return b"class BrokenNode(ImageProcessor):\n    def __init__(self)\n        pass\n"
+
+
+def _make_no_processor_bytes():
+    return b"class NotAProcessor:\n    pass\n"
+
+
 class TestGetNodes:
     def test_returns_list(self, client):
         resp = client.get("/api/nodes")
@@ -72,6 +121,89 @@ class TestGetNodes:
         assert tiff_node["name"] == "TIFF JSON to DICOM"
         assert tiff_node["inputs"] == 1
         assert tiff_node["outputs"] == 0
+        assert "metadata_file" in tiff_node["parameters"]
+
+
+class TestCustomNodes:
+    def test_download_template(self, client):
+        resp = client.get("/api/custom-nodes/template")
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/x-python"
+        assert b"class ExampleSingleInputProcessor" in resp.data
+        assert b"upload_action" in resp.data
+
+    def test_upload_custom_node_registers_new_processor(self, client, app):
+        response = client.post(
+            "/api/custom-nodes/upload",
+            data={
+                "file": (
+                    io.BytesIO(_make_valid_custom_node_bytes()),
+                    "../uploaded_demo.py",
+                ),
+                "kategori_grup": "Experimental",
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["status"] == "success"
+        assert body["filename"] == "uploaded_demo.py"
+        assert "uploaded_demo" in body["registered_node_ids"]
+
+        saved_path = os.path.join(
+            app.config["CUSTOM_NODE_UPLOAD_DIR"], "uploaded_demo.py"
+        )
+        assert os.path.isfile(saved_path)
+        assert os.path.isfile(f"{saved_path}.meta.json")
+
+        nodes = client.get("/api/nodes").get_json()
+        uploaded_node = next(node for node in nodes if node["id"] == "uploaded_demo")
+        assert uploaded_node["category"] == "Experimental"
+        assert uploaded_node["name"] == "Uploaded Demo"
+
+    def test_upload_custom_node_rejects_syntax_error_and_deletes_file(
+        self, client, app
+    ):
+        response = client.post(
+            "/api/custom-nodes/upload",
+            data={
+                "file": (
+                    io.BytesIO(_make_invalid_custom_node_bytes()),
+                    "broken_node.py",
+                ),
+                "kategori_grup": "Experimental",
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 400
+        body = response.get_json()
+        assert body["error"] == "Custom node upload failed"
+        assert (
+            "expected ':'" in body["message"]
+            or "invalid syntax" in body["message"].lower()
+        )
+        assert not os.path.exists(
+            os.path.join(app.config["CUSTOM_NODE_UPLOAD_DIR"], "broken_node.py")
+        )
+
+    def test_upload_custom_node_rejects_missing_processor_class(self, client, app):
+        response = client.post(
+            "/api/custom-nodes/upload",
+            data={
+                "file": (io.BytesIO(_make_no_processor_bytes()), "not_a_processor.py"),
+                "kategori_grup": "Experimental",
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 400
+        body = response.get_json()
+        assert "No valid ImageProcessor subclasses" in body["message"]
+        assert not os.path.exists(
+            os.path.join(app.config["CUSTOM_NODE_UPLOAD_DIR"], "not_a_processor.py")
+        )
 
 
 class TestUpload:

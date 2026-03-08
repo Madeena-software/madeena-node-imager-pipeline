@@ -2,6 +2,10 @@ import React, { useCallback } from 'react';
 import { Handle, Position } from 'reactflow';
 
 const CustomNode = ({ data, isConnectable }) => {
+  const attachmentFilenames = Object.entries(data)
+    .filter(([key, value]) => key.endsWith('_filename') && key !== 'filename' && value)
+    .map(([, value]) => value);
+
   const handleDelete = useCallback(
     (event) => {
       event.stopPropagation(); // Prevent double-click from firing
@@ -112,6 +116,13 @@ const CustomNode = ({ data, isConnectable }) => {
           🧾 {data.json_filename}
         </div>
       )}
+      {attachmentFilenames
+        .filter((filename) => filename !== data.json_filename)
+        .map((filename) => (
+          <div key={filename} style={{ fontSize: '10px', color: '#90caf9', marginBottom: '5px' }}>
+            📎 {filename}
+          </div>
+        ))}
 
       {/* Show parameter count if any */}
       {data.parameters && Object.keys(data.parameters).length > 0 && (

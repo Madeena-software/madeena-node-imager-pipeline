@@ -1,10 +1,10 @@
 """Pipeline executor — runs a connected graph of image processing nodes."""
 
-import os
 import io
-import uuid
 import logging
+import os
 import shutil
+import uuid
 from contextlib import redirect_stdout
 
 import cv2
@@ -67,45 +67,54 @@ class PipelineExecutor:
 
     def _resolve_processor_kwargs(self, processor_kwargs, session_id):
         """Hydrate processor kwargs that reference uploaded session files."""
-        resolved_kwargs = dict(processor_kwargs)
+        return dict(processor_kwargs)
 
-        json_file_id = processor_kwargs.get("json_file_id")
-        if json_file_id:
-            metadata_record = storage.get(session_id, json_file_id)
-            if metadata_record is None:
+    def _resolve_uploaded_file_parameters(
+        self, processor, processor_kwargs, session_id
+    ):
+        """Hydrate generic file-upload parameters from session storage."""
+        resolved_kwargs = self._resolve_processor_kwargs(processor_kwargs, session_id)
+        processor_parameters = getattr(processor, "parameters", {}) or {}
+
+        for _, parameter_config in processor_parameters.items():
+            if parameter_config.get("type") != "file":
+                continue
+
+            upload_action = parameter_config.get("upload_action", "base64")
+            file_id_field = parameter_config.get("file_id_field")
+            if upload_action not in {"json", "npz"} or not file_id_field:
+                continue
+
+            file_id = processor_kwargs.get(file_id_field)
+            if not file_id:
+                continue
+
+            record = storage.get(session_id, file_id)
+            if record is None:
                 raise ValueError(
-                    "Uploaded JSON metadata was not found for this session"
+                    f"Uploaded file '{file_id_field}' was not found for this session"
                 )
 
-            if (
-                not isinstance(metadata_record, dict)
-                or metadata_record.get("kind") != "json_metadata"
-            ):
+            expected_kind = (
+                "json_metadata" if upload_action == "json" else "npz_calibration"
+            )
+            if not isinstance(record, dict) or record.get("kind") != expected_kind:
                 raise TypeError(
-                    "json_file_id does not reference uploaded JSON metadata"
+                    f"{file_id_field} does not reference a valid uploaded {upload_action.upper()} file"
                 )
 
-            resolved_kwargs["json_metadata"] = metadata_record.get("data")
-            resolved_kwargs["json_filename"] = metadata_record.get("filename")
-
-        npz_file_id = processor_kwargs.get("npz_file_id")
-        if npz_file_id:
-            calibration_record = storage.get(session_id, npz_file_id)
-            if calibration_record is None:
-                raise ValueError(
-                    "Uploaded calibration .npz was not found for this session"
+            resolved_data_field = parameter_config.get("resolved_data_field")
+            if resolved_data_field:
+                resolved_kwargs[resolved_data_field] = record.get(
+                    "data" if upload_action == "json" else "data"
                 )
 
-            if (
-                not isinstance(calibration_record, dict)
-                or calibration_record.get("kind") != "npz_calibration"
-            ):
-                raise TypeError(
-                    "npz_file_id does not reference an uploaded .npz calibration file"
-                )
-
-            resolved_kwargs["calibration_bytes"] = calibration_record.get("data")
-            resolved_kwargs["calibration_filename"] = calibration_record.get("filename")
+            resolved_filename_field = parameter_config.get(
+                "resolved_filename_field",
+                parameter_config.get("filename_field"),
+            )
+            if resolved_filename_field:
+                resolved_kwargs[resolved_filename_field] = record.get("filename")
 
         return resolved_kwargs
 
@@ -228,8 +237,10 @@ class PipelineExecutor:
                         )
 
                     logger.info(f"Processing node {node['id']} with {processor.name}")
-                    processor_kwargs = self._resolve_processor_kwargs(
-                        dict(node["data"]), session_id
+                    processor_kwargs = self._resolve_uploaded_file_parameters(
+                        processor,
+                        dict(node["data"]),
+                        session_id,
                     )
 
                     # Check if processor supports multiple inputs

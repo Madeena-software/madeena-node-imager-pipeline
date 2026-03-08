@@ -29,6 +29,14 @@ class Config:
 
     SECRET_KEY = os.environ.get("SECRET_KEY", os.urandom(24).hex())
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 512 * 1024 * 1024))
+    CUSTOM_NODE_UPLOAD_DIR = os.environ.get(
+        "CUSTOM_NODE_UPLOAD_DIR",
+        os.path.join(BASE_DIR, "app", "processors", "custom"),
+    )
+    CUSTOM_NODE_TEMPLATE_PATH = os.environ.get(
+        "CUSTOM_NODE_TEMPLATE_PATH",
+        os.path.join(BASE_DIR, "app", "custom_node_templates", "template_node.py"),
+    )
 
     # Default crop values (pixels removed from each side)
     CROP_TOP = max(0, _get_env_int("CROP_TOP", 0))

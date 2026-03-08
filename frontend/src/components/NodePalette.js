@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const NodePalette = ({ nodes }) => {
+const NodePalette = ({ nodes, onOpenCustomNodeUpload, customNodeTemplateUrl }) => {
   const [expandedCategories, setExpandedCategories] = useState({});
 
   const onDragStart = (event, nodeType, nodeData) => {
@@ -58,7 +58,17 @@ const NodePalette = ({ nodes }) => {
 
   return (
     <div className="node-palette">
-      <h3>Available Nodes</h3>
+      <div className="node-palette-header">
+        <h3>Available Nodes</h3>
+        <div className="node-palette-actions">
+          <button type="button" className="node-palette-action" onClick={onOpenCustomNodeUpload}>
+            Upload Custom Node
+          </button>
+          <a className="node-palette-template-link" href={customNodeTemplateUrl} download>
+            Download Template
+          </a>
+        </div>
+      </div>
 
       {sortedCategories.map((category) => (
         <div key={category} className="node-category-group">

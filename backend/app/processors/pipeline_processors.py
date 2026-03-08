@@ -781,6 +781,8 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
                 "file_filter": ".npz",
                 "file_id_field": "npz_file_id",
                 "filename_field": "npz_filename",
+                "resolved_data_field": "calibration_bytes",
+                "resolved_filename_field": "calibration_filename",
                 "upload_action": "npz",
                 "description": "Upload camera calibration .npz file",
             },
@@ -838,7 +840,20 @@ class TiffJsonToDICOMProcessor(ImageProcessor):
         self.description = (
             "Convert the incoming image into a DICOM file using uploaded JSON metadata"
         )
-        self.parameters = {}
+        self.parameters = {
+            "metadata_file": {
+                "type": "file",
+                "default": None,
+                "required": True,
+                "file_filter": ".json",
+                "file_id_field": "json_file_id",
+                "filename_field": "json_filename",
+                "resolved_data_field": "json_metadata",
+                "resolved_filename_field": "json_filename",
+                "upload_action": "json",
+                "description": "Upload DICOM metadata in JSON format.",
+            }
+        }
         self.output_count = 0
 
     def process(self, image, **kwargs):

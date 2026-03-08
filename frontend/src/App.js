@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactFlow, {
-  addEdge,
-  Background,
-  Controls,
-  MarkerType,
-  reconnectEdge,
-  useEdgesState,
-  useNodesState,
+    addEdge,
+    Background,
+    Controls,
+    MarkerType,
+    reconnectEdge,
+    useEdgesState,
+    useNodesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import CustomEdge from './components/CustomEdge';
 import CustomNode from './components/CustomNode';
+import CustomNodeUploadModal from './components/CustomNodeUploadModal';
 import KeyboardShortcutsPanel from './components/KeyboardShortcutsPanel';
 import NodeGroupPanel from './components/NodeGroupPanel';
 import NodePalette from './components/NodePalette';
@@ -40,6 +41,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showSaveLoadModal, setShowSaveLoadModal] = useState(false);
+  const [showCustomNodeUploadModal, setShowCustomNodeUploadModal] = useState(false);
   const [showPropertiesModal, setShowPropertiesModal] = useState(false);
   const [selectedNodeForProperties, setSelectedNodeForProperties] = useState(null);
   const [nodeGroups, setNodeGroups] = useState([]);
@@ -632,19 +634,18 @@ function App() {
       return;
     }
 
-    const missingDicomJson = nodes.some(
-      (node) => node.data.nodeType === 'tiff_json_to_dicom' && !node.data.json_file_id
-    );
-    if (missingDicomJson) {
-      alert('Please upload JSON metadata in each TIFF JSON to DICOM node before execution');
-      return;
-    }
-
-    const missingCalibrationNpz = nodes.some(
-      (node) => node.data.nodeType === 'apply_camera_calibration' && !node.data.npz_file_id
-    );
-    if (missingCalibrationNpz) {
-      alert('Please upload a calibration .npz file in each Apply Camera Calibration node before execution');
+    const missingRequiredUpload = nodes.find((node) => {
+      const nodeDefinition = availableNodes.find((availableNode) => availableNode.id === node.data.nodeType);
+      return Object.entries(nodeDefinition?.parameters || {}).some(
+        ([, parameterConfig]) =>
+          parameterConfig.type === 'file' &&
+          parameterConfig.required &&
+          parameterConfig.file_id_field &&
+          !node.data[parameterConfig.file_id_field]
+      );
+    });
+    if (missingRequiredUpload) {
+      alert(`Please upload all required files in node "${missingRequiredUpload.data.name}" before execution`);
       return;
     }
 
@@ -654,8 +655,11 @@ function App() {
     try {
       const pipelineData = {
         nodes: nodes.map((node) => {
+          const nodeDefinition = availableNodes.find((availableNode) => availableNode.id === node.data.nodeType);
+
           // Build input_mapping for multi-input nodes
           const input_mapping = {};
+          const uploadedFileFields = {};
 
           if (node.data.multi_input && node.data.input_slots) {
             // Find all edges targeting this node
@@ -668,6 +672,20 @@ function App() {
               });
           }
 
+          Object.values(nodeDefinition?.parameters || {}).forEach((parameterConfig) => {
+            if (parameterConfig.type !== 'file') {
+              return;
+            }
+
+            if (parameterConfig.file_id_field && node.data[parameterConfig.file_id_field]) {
+              uploadedFileFields[parameterConfig.file_id_field] = node.data[parameterConfig.file_id_field];
+            }
+
+            if (parameterConfig.filename_field && node.data[parameterConfig.filename_field]) {
+              uploadedFileFields[parameterConfig.filename_field] = node.data[parameterConfig.filename_field];
+            }
+          });
+
           return {
             id: node.id,
             type: node.data.nodeType,
@@ -679,16 +697,7 @@ function App() {
                     file_id: node.data.file_id,
                   }
                 : {}),
-              ...(node.data.nodeType === 'tiff_json_to_dicom' && node.data.json_file_id
-                ? {
-                    json_file_id: node.data.json_file_id,
-                  }
-                : {}),
-              ...(node.data.nodeType === 'apply_camera_calibration' && node.data.npz_file_id
-                ? {
-                    npz_file_id: node.data.npz_file_id,
-                  }
-                : {}),
+              ...uploadedFileFields,
               // Include input_mapping for multi-input nodes
               ...(Object.keys(input_mapping).length > 0
                 ? {
@@ -796,7 +805,7 @@ function App() {
     } finally {
       setIsProcessing(false);
     }
-  }, [nodes, edges, setIsProcessing, setProcessingStatus]);
+  }, [availableNodes, nodes, edges, setIsProcessing, setProcessingStatus]);
 
   const clearPipeline = useCallback(() => {
     setNodes([]);
@@ -911,7 +920,11 @@ function App() {
           >
             ✕
           </button>
-          <NodePalette nodes={availableNodes} />
+          <NodePalette
+            nodes={availableNodes}
+            onOpenCustomNodeUpload={() => setShowCustomNodeUploadModal(true)}
+            customNodeTemplateUrl={api.customNodeTemplateUrl()}
+          />
           <NodeGroupPanel
             nodes={nodes}
             groups={nodeGroups}
@@ -979,6 +992,12 @@ function App() {
         currentPipeline={{ nodes, edges }}
       />
 
+      <CustomNodeUploadModal
+        isOpen={showCustomNodeUploadModal}
+        onClose={() => setShowCustomNodeUploadModal(false)}
+        onUploadSuccess={loadAvailableNodes}
+      />
+
       <NodePropertiesModal
         isOpen={showPropertiesModal}
         onClose={() => {
@@ -995,7 +1014,7 @@ function App() {
         <div className="app-loading-overlay" role="status" aria-live="polite">
           <div className="app-loading-content">
             <div className="loading-spinner" />
-            <span>{isUploading ? 'Uploading image...' : 'Executing pipeline...'}</span>
+            <span>{isUploading ? 'Uploading file...' : 'Executing pipeline...'}</span>
           </div>
         </div>
       )}

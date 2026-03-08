@@ -34,6 +34,16 @@ const apiService = {
   /** Generic GET wrapper */
   get: (url) => api.get(url),
 
+  /** Upload a custom processor module (.py) */
+  uploadCustomNode: (file, kategoriGrup) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('kategori_grup', kategoriGrup);
+    return api.post('/custom-nodes/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   /** Upload an image file via multipart form-data */
   uploadImage: (file) => {
     const formData = new FormData();
@@ -71,6 +81,9 @@ const apiService = {
 
   /** Build an output artifact URL for a given output_id (supports npz and images) */
   outputUrl: (outputId) => `${API_BASE_URL}/output/${outputId}`,
+
+  /** Build a download URL for the custom node template */
+  customNodeTemplateUrl: () => `${API_BASE_URL}/custom-nodes/template`,
 };
 
 export default apiService;

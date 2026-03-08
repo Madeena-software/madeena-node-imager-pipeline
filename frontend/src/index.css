@@ -163,6 +163,37 @@ code {
   color: var(--text-secondary);
 }
 
+.node-palette-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.node-palette-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.node-palette-action,
+.node-palette-template-link {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.node-palette-action:hover,
+.node-palette-template-link:hover {
+  border-color: var(--accent-color);
+  color: var(--text-primary);
+}
+
 /* Category Groups */
 .node-category-group {
   margin-bottom: 12px;
@@ -1754,4 +1785,103 @@ code {
     font-size: 11px;
     padding: 10px;
   }
+}
+
+.modal-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.custom-node-modal {
+  max-width: 640px;
+}
+
+.custom-node-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.custom-node-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.custom-node-field input {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 10px 12px;
+}
+
+.custom-node-actions-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.template-download-link {
+  color: var(--accent-color);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.template-download-link:hover {
+  text-decoration: underline;
+}
+
+.selected-file-name {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.custom-node-feedback {
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.custom-node-feedback strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.custom-node-feedback p,
+.custom-node-feedback ul,
+.custom-node-feedback pre {
+  margin: 0;
+}
+
+.custom-node-feedback ul {
+  padding-left: 18px;
+}
+
+.custom-node-feedback pre {
+  color: inherit;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.custom-node-feedback-error {
+  background: rgba(244, 67, 54, 0.12);
+  border: 1px solid rgba(244, 67, 54, 0.35);
+  color: #ffb3ad;
+}
+
+.custom-node-feedback-success {
+  background: rgba(76, 175, 80, 0.12);
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  color: #b7f5bc;
+}
+
+.custom-node-feedback-warning {
+  background: rgba(255, 152, 0, 0.12);
+  border: 1px solid rgba(255, 152, 0, 0.35);
+  color: #ffd59a;
 }

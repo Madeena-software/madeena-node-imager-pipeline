@@ -1,6 +1,26 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 
+const buildAttachmentState = (nodeDefinition, nodeData = {}) => {
+  const nextState = {};
+
+  Object.values(nodeDefinition?.parameters || {}).forEach((config) => {
+    if (config.type !== 'file') {
+      return;
+    }
+
+    if (config.file_id_field) {
+      nextState[config.file_id_field] = nodeData[config.file_id_field] || null;
+    }
+
+    if (config.filename_field) {
+      nextState[config.filename_field] = nodeData[config.filename_field] || '';
+    }
+  });
+
+  return nextState;
+};
+
 const NodePropertiesModal = ({
   isOpen,
   onClose,
@@ -13,12 +33,7 @@ const NodePropertiesModal = ({
   const [nodeInfo, setNodeInfo] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [fileParameterFilenames, setFileParameterFilenames] = useState({});
-  const [nodeAttachmentData, setNodeAttachmentData] = useState({
-    json_file_id: null,
-    json_filename: '',
-    npz_file_id: null,
-    npz_filename: '',
-  });
+  const [nodeAttachmentData, setNodeAttachmentData] = useState({});
 
   useEffect(() => {
     if (isOpen && node) {
@@ -28,12 +43,7 @@ const NodePropertiesModal = ({
       // Initialize parameters with current values or defaults
       setParameters(node.data.parameters || {});
       setFileParameterFilenames({});
-      setNodeAttachmentData({
-        json_file_id: node.data.json_file_id || null,
-        json_filename: node.data.json_filename || '',
-        npz_file_id: node.data.npz_file_id || null,
-        npz_filename: node.data.npz_filename || '',
-      });
+      setNodeAttachmentData(buildAttachmentState(nodeDefinition, node.data));
 
       setNodeInfo(nodeDefinition);
     }
@@ -80,6 +90,14 @@ const NodePropertiesModal = ({
           [paramConfig.file_id_field]: response.data.file_id,
           [paramConfig.filename_field]: response.data.filename,
         }));
+      } else if (paramConfig.upload_action === 'json') {
+        const response = await api.uploadJson(file);
+        handleParameterChange(paramName, response.data.filename);
+        setNodeAttachmentData((prev) => ({
+          ...prev,
+          [paramConfig.file_id_field]: response.data.file_id,
+          [paramConfig.filename_field]: response.data.filename,
+        }));
       } else {
         const base64String = await readFileAsDataUrl(file);
         handleParameterChange(paramName, base64String);
@@ -95,11 +113,6 @@ const NodePropertiesModal = ({
   };
 
   const handleSave = () => {
-    if (node?.data?.nodeType === 'tiff_json_to_dicom' && !nodeAttachmentData.json_file_id) {
-      alert('Please upload a JSON metadata file for this node.');
-      return;
-    }
-
     const missingRequiredFileParam = Object.entries(nodeInfo?.parameters || {}).find(
       ([, paramConfig]) =>
         paramConfig.type === 'file' &&
@@ -138,42 +151,6 @@ const NodePropertiesModal = ({
         return next;
       });
     }
-  };
-
-  const handleJsonUpload = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    if (!file.name.toLowerCase().endsWith('.json')) {
-      alert('Please select a .json file.');
-      return;
-    }
-
-    setIsUploading(true);
-    onUploadingChange?.(true);
-
-    try {
-      const response = await api.uploadJson(file);
-      setNodeAttachmentData({
-        json_file_id: response.data.file_id,
-        json_filename: response.data.filename,
-      });
-    } catch (error) {
-      console.error('JSON upload failed:', error);
-      alert(error.response?.data?.error || error.response?.data?.message || 'JSON upload failed');
-    } finally {
-      setIsUploading(false);
-      onUploadingChange?.(false);
-    }
-  };
-
-  const handleClearJson = () => {
-    setNodeAttachmentData((prev) => ({
-      ...prev,
-      json_file_id: null,
-      json_filename: '',
-    }));
   };
 
   const handleImageUpload = async (event) => {
@@ -479,35 +456,6 @@ const NodePropertiesModal = ({
             </div>
           )}
 
-          {node.data.nodeType === 'tiff_json_to_dicom' && (
-            <div className="input-node-section">
-              <h4>JSON Metadata</h4>
-              {nodeAttachmentData.json_filename ? (
-                <div className="current-file">
-                  <strong>Current file:</strong> {nodeAttachmentData.json_filename}
-                  <div className="file-info">File ID: {nodeAttachmentData.json_file_id}</div>
-                </div>
-              ) : (
-                <div className="no-file">No JSON metadata uploaded.</div>
-              )}
-
-              <div className="parameter-input-group">
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  onChange={handleJsonUpload}
-                  disabled={isUploading}
-                  className="parameter-input file-input"
-                />
-              </div>
-
-              {nodeAttachmentData.json_filename && (
-                <button className="reset-button" onClick={handleClearJson} disabled={isUploading}>
-                  Remove JSON
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="modal-footer">
