@@ -51,6 +51,15 @@ const apiService = {
     });
   },
 
+  /** Upload a camera calibration .npz file for Apply Camera Calibration nodes */
+  uploadNpz: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload-npz', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   /** Execute a processing pipeline */
   executePipeline: (pipelineData) => api.post('/execute-pipeline', pipelineData),
 

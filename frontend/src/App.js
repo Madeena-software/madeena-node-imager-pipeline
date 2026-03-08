@@ -58,7 +58,6 @@ function App() {
 
   // Undo/Redo functionality
   const {
-    state: pipelineHistory,
     setState: setPipelineHistory,
     undo,
     redo,
@@ -641,6 +640,14 @@ function App() {
       return;
     }
 
+    const missingCalibrationNpz = nodes.some(
+      (node) => node.data.nodeType === 'apply_camera_calibration' && !node.data.npz_file_id
+    );
+    if (missingCalibrationNpz) {
+      alert('Please upload a calibration .npz file in each Apply Camera Calibration node before execution');
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingStatus([]);
 
@@ -675,6 +682,11 @@ function App() {
               ...(node.data.nodeType === 'tiff_json_to_dicom' && node.data.json_file_id
                 ? {
                     json_file_id: node.data.json_file_id,
+                  }
+                : {}),
+              ...(node.data.nodeType === 'apply_camera_calibration' && node.data.npz_file_id
+                ? {
+                    npz_file_id: node.data.npz_file_id,
                   }
                 : {}),
               // Include input_mapping for multi-input nodes

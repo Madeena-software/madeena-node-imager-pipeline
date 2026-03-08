@@ -67,23 +67,46 @@ class PipelineExecutor:
 
     def _resolve_processor_kwargs(self, processor_kwargs, session_id):
         """Hydrate processor kwargs that reference uploaded session files."""
-        json_file_id = processor_kwargs.get("json_file_id")
-        if not json_file_id:
-            return processor_kwargs
-
-        metadata_record = storage.get(session_id, json_file_id)
-        if metadata_record is None:
-            raise ValueError("Uploaded JSON metadata was not found for this session")
-
-        if (
-            not isinstance(metadata_record, dict)
-            or metadata_record.get("kind") != "json_metadata"
-        ):
-            raise TypeError("json_file_id does not reference uploaded JSON metadata")
-
         resolved_kwargs = dict(processor_kwargs)
-        resolved_kwargs["json_metadata"] = metadata_record.get("data")
-        resolved_kwargs["json_filename"] = metadata_record.get("filename")
+
+        json_file_id = processor_kwargs.get("json_file_id")
+        if json_file_id:
+            metadata_record = storage.get(session_id, json_file_id)
+            if metadata_record is None:
+                raise ValueError(
+                    "Uploaded JSON metadata was not found for this session"
+                )
+
+            if (
+                not isinstance(metadata_record, dict)
+                or metadata_record.get("kind") != "json_metadata"
+            ):
+                raise TypeError(
+                    "json_file_id does not reference uploaded JSON metadata"
+                )
+
+            resolved_kwargs["json_metadata"] = metadata_record.get("data")
+            resolved_kwargs["json_filename"] = metadata_record.get("filename")
+
+        npz_file_id = processor_kwargs.get("npz_file_id")
+        if npz_file_id:
+            calibration_record = storage.get(session_id, npz_file_id)
+            if calibration_record is None:
+                raise ValueError(
+                    "Uploaded calibration .npz was not found for this session"
+                )
+
+            if (
+                not isinstance(calibration_record, dict)
+                or calibration_record.get("kind") != "npz_calibration"
+            ):
+                raise TypeError(
+                    "npz_file_id does not reference an uploaded .npz calibration file"
+                )
+
+            resolved_kwargs["calibration_bytes"] = calibration_record.get("data")
+            resolved_kwargs["calibration_filename"] = calibration_record.get("filename")
+
         return resolved_kwargs
 
     def execute(self, nodes, edges, session_id):

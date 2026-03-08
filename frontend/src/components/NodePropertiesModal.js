@@ -16,20 +16,25 @@ const NodePropertiesModal = ({
   const [nodeAttachmentData, setNodeAttachmentData] = useState({
     json_file_id: null,
     json_filename: '',
+    npz_file_id: null,
+    npz_filename: '',
   });
 
   useEffect(() => {
     if (isOpen && node) {
+      // Get node definition from available nodes
+      const nodeDefinition = availableNodes.find((n) => n.id === node.data.nodeType);
+
       // Initialize parameters with current values or defaults
       setParameters(node.data.parameters || {});
       setFileParameterFilenames({});
       setNodeAttachmentData({
         json_file_id: node.data.json_file_id || null,
         json_filename: node.data.json_filename || '',
+        npz_file_id: node.data.npz_file_id || null,
+        npz_filename: node.data.npz_filename || '',
       });
 
-      // Get node definition from available nodes
-      const nodeDefinition = availableNodes.find((n) => n.id === node.data.nodeType);
       setNodeInfo(nodeDefinition);
     }
   }, [isOpen, node, availableNodes]);
@@ -40,6 +45,14 @@ const NodePropertiesModal = ({
       [paramName]: value,
     }));
   };
+
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
+    });
 
   const handleFileUpload = async (event, paramName, paramConfig) => {
     const file = event.target.files?.[0];
@@ -59,20 +72,22 @@ const NodePropertiesModal = ({
     onUploadingChange?.(true);
 
     try {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64String = e.target.result;
+      if (paramConfig.upload_action === 'npz') {
+        const response = await api.uploadNpz(file);
+        handleParameterChange(paramName, response.data.filename);
+        setNodeAttachmentData((prev) => ({
+          ...prev,
+          [paramConfig.file_id_field]: response.data.file_id,
+          [paramConfig.filename_field]: response.data.filename,
+        }));
+      } else {
+        const base64String = await readFileAsDataUrl(file);
         handleParameterChange(paramName, base64String);
         setFileParameterFilenames((prev) => ({ ...prev, [paramName]: file.name }));
-      };
-      reader.onerror = (error) => {
-        console.error('File reading failed:', error);
-        alert('Failed to read file.');
-      };
-      reader.readAsDataURL(file);
+      }
     } catch (error) {
       console.error('File upload failed:', error);
-      alert('File upload failed');
+      alert(error.response?.data?.error || error.response?.data?.message || 'File upload failed');
     } finally {
       setIsUploading(false);
       onUploadingChange?.(false);
@@ -82,6 +97,19 @@ const NodePropertiesModal = ({
   const handleSave = () => {
     if (node?.data?.nodeType === 'tiff_json_to_dicom' && !nodeAttachmentData.json_file_id) {
       alert('Please upload a JSON metadata file for this node.');
+      return;
+    }
+
+    const missingRequiredFileParam = Object.entries(nodeInfo?.parameters || {}).find(
+      ([, paramConfig]) =>
+        paramConfig.type === 'file' &&
+        paramConfig.required &&
+        paramConfig.file_id_field &&
+        !nodeAttachmentData[paramConfig.file_id_field]
+    );
+    if (missingRequiredFileParam) {
+      const [paramName] = missingRequiredFileParam;
+      alert(`Please upload a file for ${paramName.replace(/_/g, ' ')}.`);
       return;
     }
 
@@ -99,6 +127,16 @@ const NodePropertiesModal = ({
       });
       setParameters(defaultParams);
       setFileParameterFilenames({});
+      setNodeAttachmentData((prev) => {
+        const next = { ...prev };
+        Object.values(nodeInfo.parameters).forEach((config) => {
+          if (config.type === 'file' && config.file_id_field && config.filename_field) {
+            next[config.file_id_field] = null;
+            next[config.filename_field] = '';
+          }
+        });
+        return next;
+      });
     }
   };
 
@@ -131,10 +169,11 @@ const NodePropertiesModal = ({
   };
 
   const handleClearJson = () => {
-    setNodeAttachmentData({
+    setNodeAttachmentData((prev) => ({
+      ...prev,
       json_file_id: null,
       json_filename: '',
-    });
+    }));
   };
 
   const handleImageUpload = async (event) => {
@@ -176,9 +215,15 @@ const NodePropertiesModal = ({
     const value = parameters[paramName] ?? paramConfig.default ?? '';
 
     switch (paramConfig.type) {
-      case 'file':
+      case 'file': {
+        const managedFilename = paramConfig.filename_field
+          ? nodeAttachmentData[paramConfig.filename_field]
+          : '';
         const currentFilename =
-          fileParameterFilenames[paramName] || (value ? 'File previously uploaded' : '');
+          managedFilename ||
+          fileParameterFilenames[paramName] ||
+          (value ? 'File previously uploaded' : '');
+
         return (
           <div className="parameter-input-group">
             {currentFilename && (
@@ -191,14 +236,21 @@ const NodePropertiesModal = ({
               accept={paramConfig.file_filter || '*/*'}
               onChange={(e) => handleFileUpload(e, paramName, paramConfig)}
               disabled={isUploading}
-              className="parameter-input text-input"
+              className="parameter-input file-input"
             />
-            {value && (
+            {(value || managedFilename) && (
               <button
                 className="reset-button"
                 onClick={() => {
                   handleParameterChange(paramName, null);
                   setFileParameterFilenames((prev) => ({ ...prev, [paramName]: null }));
+                  if (paramConfig.file_id_field && paramConfig.filename_field) {
+                    setNodeAttachmentData((prev) => ({
+                      ...prev,
+                      [paramConfig.file_id_field]: null,
+                      [paramConfig.filename_field]: '',
+                    }));
+                  }
                 }}
                 disabled={isUploading}
               >
@@ -207,6 +259,7 @@ const NodePropertiesModal = ({
             )}
           </div>
         );
+      }
 
       case 'number':
         return (
@@ -414,7 +467,7 @@ const NodePropertiesModal = ({
                   accept="image/*"
                   onChange={handleImageUpload}
                   disabled={isUploading}
-                  className="parameter-input text-input"
+                  className="parameter-input file-input"
                 />
               </div>
 
@@ -444,7 +497,7 @@ const NodePropertiesModal = ({
                   accept=".json,application/json"
                   onChange={handleJsonUpload}
                   disabled={isUploading}
-                  className="parameter-input text-input"
+                  className="parameter-input file-input"
                 />
               </div>
 

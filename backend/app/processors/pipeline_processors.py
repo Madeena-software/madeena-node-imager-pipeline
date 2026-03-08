@@ -703,7 +703,7 @@ class CameraCalibrationProcessor(ImageProcessor):
 
     def process(self, image, **kwargs):
         auto_detect = kwargs.get("auto_detect_params", True)
-        
+
         pattern_cols = None
         pattern_rows = None
         circle_diameter = None
@@ -766,7 +766,7 @@ class CameraCalibrationProcessor(ImageProcessor):
 
 
 # =============================================================================
-# 13. Apply Camera Calibration (image + npz -> image)
+# 13. Apply Camera Calibration (image → image, calibration via server-side upload)
 # =============================================================================
 class ApplyCameraCalibrationProcessor(ImageProcessor):
     def __init__(self):
@@ -776,7 +776,12 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
         self.parameters = {
             "calibration_file": {
                 "type": "file",
+                "default": None,
+                "required": True,
                 "file_filter": ".npz",
+                "file_id_field": "npz_file_id",
+                "filename_field": "npz_filename",
+                "upload_action": "npz",
                 "description": "Upload camera calibration .npz file",
             },
             "alpha": {
@@ -795,25 +800,22 @@ class ApplyCameraCalibrationProcessor(ImageProcessor):
         }
 
     def process(self, image, **kwargs):
-        calibration_file_b64 = kwargs.get("calibration_file")
-        if not calibration_file_b64:
+        calibration_bytes = kwargs.get("calibration_bytes")
+        if not calibration_bytes:
             raise ValueError(
-                "Apply Camera Calibration requires an uploaded .npz calibration file."
+                "Apply Camera Calibration requires an uploaded .npz calibration file "
+                "(use the node properties panel to upload one)."
             )
 
-        try:
-            # The frontend sends a data URL like "data:application/octet-stream;base64,..."
-            header, encoded = calibration_file_b64.split(",", 1)
-            decoded_bytes = base64.b64decode(encoded)
-            
-            with io.BytesIO(decoded_bytes) as buf:
-                calibration_data = np.load(buf)
-        except (ValueError, TypeError, base64.binascii.Error) as e:
-            raise ValueError(f"Failed to decode or load calibration file: {e}")
+        with io.BytesIO(calibration_bytes) as buf:
+            with np.load(buf) as loaded_calibration:
+                calibration_data = {
+                    key: loaded_calibration[key] for key in loaded_calibration.files
+                }
 
         alpha = float(kwargs.get("alpha", 0.0))
         crop_to_roi = bool(kwargs.get("crop_to_roi", True))
-        
+
         result = undistort_image(
             image,
             calibration_data,

@@ -93,6 +93,11 @@ def _allowed_json_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() == "json"
 
 
+def _allowed_npz_file(filename: str) -> bool:
+    """Return True if *filename* has a .npz extension."""
+    return "." in filename and filename.rsplit(".", 1)[1].lower() == "npz"
+
+
 def _format_bytes(byte_count: int) -> str:
     """Format bytes as a readable string (B/KB/MB/GB)."""
     value = float(max(0, byte_count))
@@ -325,6 +330,42 @@ def upload_json_metadata():
 
     logger.info(
         "Uploaded metadata %s as %s for session %s", file.filename, file_id, session_id
+    )
+    return jsonify({"file_id": file_id, "filename": secure_filename(file.filename)})
+
+
+@app.route("/api/upload-npz", methods=["POST"])
+def upload_npz_calibration():
+    """Upload a camera calibration .npz file and return its unique file_id."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No file selected"}), 400
+
+    if not _allowed_npz_file(file.filename):
+        return jsonify({"error": "Invalid file type. Supported: .npz"}), 400
+
+    file_bytes = file.read()
+
+    session_id = _get_session_id()
+    file_id = str(uuid.uuid4())
+    storage.put(
+        session_id,
+        file_id,
+        {
+            "kind": "npz_calibration",
+            "data": file_bytes,
+            "filename": secure_filename(file.filename),
+        },
+    )
+
+    logger.info(
+        "Uploaded calibration %s as %s for session %s",
+        file.filename,
+        file_id,
+        session_id,
     )
     return jsonify({"file_id": file_id, "filename": secure_filename(file.filename)})
 
