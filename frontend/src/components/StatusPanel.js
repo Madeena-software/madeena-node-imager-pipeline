@@ -52,6 +52,9 @@ const StatusPanel = ({ status }) => {
           return <LogItem key={`log-${index}`} item={item} />;
         }
 
+        // Skip rendering completed/status items that have no message or output
+        if (!item.message && !item.output_id) return null;
+
         const outputExt = item.output_ext || '.png';
         const outputType = item.output_type || (outputExt === '.png' ? 'image' : 'artifact');
         const isImage = outputType === 'image';
