@@ -119,6 +119,9 @@ class CameraCalibrator:
         else:
             gray = image.copy()
 
+        if gray.dtype != np.uint8:
+            gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
         # Simple blob detector to find circles
         params = cv2.SimpleBlobDetector_Params()
         params.filterByArea = True
@@ -421,6 +424,7 @@ class CameraCalibrator:
             dict: Calibration parameters or None if failed
         """
         print(f"Starting in-memory camera calibration...")
+        was_auto_detect = self.pattern_size is None or self.circle_diameter is None
 
         # Load image if a path was provided
         if isinstance(image, str):
@@ -454,10 +458,16 @@ class CameraCalibrator:
         # Detect circles
         ret, centers = self.detect_circles(img)
         if not ret:
-            raise ValueError(
-                "Could not detect circle pattern. Check image quality or "
-                "manually specify grid size if auto-detection is off."
-            )
+            if was_auto_detect:
+                raise ValueError(
+                    "Could not detect circle pattern using auto-detection. "
+                    "Try disabling 'Auto Detect Params' and specifying the grid size manually."
+                )
+            else:
+                raise ValueError(
+                    "Could not detect circle pattern with the specified manual parameters. "
+                    "Please check that 'Pattern Cols' and 'Pattern Rows' match your image."
+                )
 
         # Get image dimensions
         img_size = (img.shape[1], img.shape[0])  # (width, height)

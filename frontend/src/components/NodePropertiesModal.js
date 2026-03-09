@@ -268,7 +268,6 @@ const NodePropertiesModal = ({
                 onChange={(e) => handleParameterChange(paramName, e.target.checked)}
                 className="parameter-checkbox"
               />
-              <span className="checkbox-text">{value ? 'Enabled' : 'Disabled'}</span>
             </label>
           </div>
         );
