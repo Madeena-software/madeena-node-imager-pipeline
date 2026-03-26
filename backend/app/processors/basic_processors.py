@@ -1,7 +1,11 @@
+import logging
+
 import cv2
 import numpy as np
 import os
 from .base_processor import ImageProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class ResizeProcessor(ImageProcessor):
@@ -731,7 +735,7 @@ class ConvolutionProcessor(ImageProcessor):
             return result
 
         except Exception as e:
-            print(f"Error parsing kernel: {e}")
+            logger.warning("Error parsing kernel: %s", e)
             # Return original image if kernel parsing fails
             return image
 

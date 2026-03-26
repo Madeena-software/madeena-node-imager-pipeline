@@ -49,7 +49,7 @@ class Config:
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 
     HOST = os.environ.get("HOST", "0.0.0.0")
-    PORT = int(os.environ.get("PORT", 5000))
+    PORT = _get_env_int("PORT", 5000)
 
     ALLOWED_EXTENSIONS = frozenset(
         {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "ico", "jfif"}

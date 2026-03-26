@@ -331,8 +331,6 @@ class PipelineExecutor:
                         continue
                     if sink_node["type"] in {"input", "output"}:
                         continue
-                    if sink_node["type"] != "camera_calibration":
-                        continue
 
                     source_path = node_outputs.get(sink_node_id)
                     if not source_path or not os.path.exists(source_path):
