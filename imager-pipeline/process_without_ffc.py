@@ -271,7 +271,7 @@ def batch_process_folder(
     input_folder: str,
     output_folder: str,
     detector_type: Optional[str] = None,
-    extensions: List[str] = [".tif", ".tiff", ".png", ".jpg"],
+    extensions: Optional[List[str]] = None,
     save_debug: bool = False,
 ) -> dict:
     """
@@ -287,6 +287,8 @@ def batch_process_folder(
     Returns:
         Statistics dict with success/failure counts
     """
+    if extensions is None:
+        extensions = [".tif", ".tiff", ".png", ".jpg"]
     print(f"\n{'='*70}")
     print(f"BATCH PROCESSING FOLDER: {input_folder}")
     print(f"Output folder: {output_folder}")

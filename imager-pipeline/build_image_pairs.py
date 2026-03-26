@@ -49,8 +49,6 @@ def parse_filename_params(filename):
     Returns:
         Dict with kVp, mA, exposure_time or None if parsing fails
     """
-    import re
-    
     # Pattern: 90kV40mA0,50s or 80kV50mA0,32s
     pattern = r'(\d+)kV(\d+)mA(\d+)[,.](\d+)s'
     match = re.search(pattern, filename, re.IGNORECASE)

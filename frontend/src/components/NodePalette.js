@@ -1,4 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+
+// Static ordering — defined outside the component to avoid re-creation on every render
+const CATEGORY_ORDER = [
+  'Basic',
+  'Transform',
+  'Color',
+  'Filter',
+  'Enhancement',
+  'Pipeline',
+  'Math',
+  'Morphological',
+  'Detection',
+  'Other',
+];
 
 const NodePalette = ({ nodes }) => {
   const [expandedCategories, setExpandedCategories] = useState({});
@@ -16,36 +30,32 @@ const NodePalette = ({ nodes }) => {
     }));
   };
 
-  // Group nodes by category
-  const groupedNodes = nodes.reduce((acc, node) => {
-    const category = node.category || 'Other';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(node);
-    return acc;
-  }, {});
+  // Group nodes by category — recomputes only when `nodes` changes
+  const groupedNodes = useMemo(
+    () =>
+      nodes.reduce((acc, node) => {
+        const category = node.category || 'Other';
+        if (!acc[category]) {
+          acc[category] = [];
+        }
+        acc[category].push(node);
+        return acc;
+      }, {}),
+    [nodes]
+  );
 
-  // Sort categories
-  const categoryOrder = [
-    'Basic',
-    'Transform',
-    'Color',
-    'Filter',
-    'Enhancement',
-    'Pipeline',
-    'Math',
-    'Morphological',
-    'Detection',
-    'Other',
-  ];
-  const sortedCategories = Object.keys(groupedNodes).sort((a, b) => {
-    const indexA = categoryOrder.indexOf(a);
-    const indexB = categoryOrder.indexOf(b);
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    return indexA - indexB;
-  });
+  // Derive sorted category keys from the already-grouped map
+  const sortedCategories = useMemo(
+    () =>
+      Object.keys(groupedNodes).sort((a, b) => {
+        const indexA = CATEGORY_ORDER.indexOf(a);
+        const indexB = CATEGORY_ORDER.indexOf(b);
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+        return indexA - indexB;
+      }),
+    [groupedNodes]
+  );
 
   return (
     <div className="node-palette">

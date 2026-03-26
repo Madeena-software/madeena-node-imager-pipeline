@@ -4,7 +4,7 @@ import api from '../services/api';
 const OutputPreviewPanel = ({ nodes, processingStatus }) => {
   const [inputImageId, setInputImageId] = useState(null);
   const [outputImageIds, setOutputImageIds] = useState([]);
-  const [expandedItems, setExpandedItems] = useState(new Set());
+  const [expandedItems, setExpandedItems] = useState([]);
   const timestampRef = useRef(Date.now());
   const inputKeyRef = useRef('');
   const outputKeyRef = useRef('');
@@ -42,21 +42,17 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
         timestampRef.current = Date.now();
         // Auto-expand newly added outputs
         setExpandedItems((prev) => {
-          const next = new Set(prev);
-          outputs.forEach((o) => next.add(o.output_id));
-          return next;
+          const newIds = outputs.map((o) => o.output_id).filter((id) => !prev.includes(id));
+          return newIds.length ? [...prev, ...newIds] : prev;
         });
       }
     }
   }, [processingStatus]);
 
   const toggleItem = (key) => {
-    setExpandedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setExpandedItems((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   if (!inputImageId && outputImageIds.length === 0) {
@@ -93,7 +89,7 @@ const OutputPreviewPanel = ({ nodes, processingStatus }) => {
 
       <div className="output-list">
         {allItems.map((item) => {
-          const isExpanded = expandedItems.has(item.id);
+          const isExpanded = expandedItems.includes(item.id);
           const isNpz = item.ext === '.npz';
           const isInput = item.type === 'input';
 
