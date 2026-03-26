@@ -10,12 +10,24 @@ import cv2
 import numpy as np
 from .base_processor import ImageProcessor
 
-# Add imager-pipeline to Python path so we can import from it
-IMAGER_PIPELINE_DIR = os.path.normpath(
+# ---------------------------------------------------------------------------
+# imager-pipeline location
+# ---------------------------------------------------------------------------
+# The imager-pipeline directory is a sibling of backend/ in the repository.
+# When the package is installed via `pip install -e ../imager-pipeline` the
+# modules below are already importable and the sys.path block is a no-op.
+# In an uninstalled / development environment we add the directory directly.
+_IMAGER_PIPELINE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "imager-pipeline")
 )
-if IMAGER_PIPELINE_DIR not in sys.path:
-    sys.path.insert(0, IMAGER_PIPELINE_DIR)
+if _IMAGER_PIPELINE_DIR not in sys.path:
+    if not os.path.isdir(_IMAGER_PIPELINE_DIR):
+        raise ImportError(
+            f"imager-pipeline directory not found: {_IMAGER_PIPELINE_DIR}. "
+            "Either install it with `pip install -e <path>/imager-pipeline` "
+            "or ensure the full repository is checked out."
+        )
+    sys.path.insert(0, _IMAGER_PIPELINE_DIR)
 
 # Import from imager-pipeline
 from wavelet_denoising import WaveletDenoiser, WaveletBackgroundRemover

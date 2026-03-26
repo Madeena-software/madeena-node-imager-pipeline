@@ -11,6 +11,12 @@ opencv-python>=4.8,<5.0
 Pillow>=10.0,<11.0
 numpy>=1.24,<2.0
 
+# Pipeline processing (required by pipeline_processors.py, which imports from imager-pipeline)
+scipy>=1.10
+PyWavelets>=1.4
+scikit-image>=0.20
+matplotlib>=3.6
+
 # Production WSGI (optional)
 gunicorn>=21.0,<23.0
 
@@ -18,3 +24,6 @@ gunicorn>=21.0,<23.0
 pytest>=7.4,<9.0
 pytest-cov>=4.1,<6.0
 ruff>=0.4
+
+# Local imager-pipeline package (install once from repo root):
+#   pip install -e ../imager-pipeline
