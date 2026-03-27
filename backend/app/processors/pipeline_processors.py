@@ -13,19 +13,19 @@ from .base_processor import ImageProcessor
 # ---------------------------------------------------------------------------
 # imager-pipeline location
 # ---------------------------------------------------------------------------
-# The imager-pipeline directory is a sibling of backend/ in the repository.
-# When the package is installed via `pip install -e ../imager-pipeline` the
-# modules below are already importable and the sys.path block is a no-op.
-# In an uninstalled / development environment we add the directory directly.
+# If IMAGER_PIPELINE_DIR is not provided, default to repository sibling folder.
 _IMAGER_PIPELINE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "imager-pipeline")
+    os.environ.get(
+        "IMAGER_PIPELINE_DIR",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "imager-pipeline"),
+    )
 )
 if _IMAGER_PIPELINE_DIR not in sys.path:
     if not os.path.isdir(_IMAGER_PIPELINE_DIR):
         raise ImportError(
             f"imager-pipeline directory not found: {_IMAGER_PIPELINE_DIR}. "
-            "Either install it with `pip install -e <path>/imager-pipeline` "
-            "or ensure the full repository is checked out."
+            "Either install it with `pip install -e <path>/imager-pipeline`, "
+            "set IMAGER_PIPELINE_DIR, or ensure the full repository is checked out."
         )
     sys.path.insert(0, _IMAGER_PIPELINE_DIR)
 

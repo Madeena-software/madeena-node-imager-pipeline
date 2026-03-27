@@ -58,7 +58,6 @@ function App() {
 
   // Undo/Redo functionality
   const {
-    state: pipelineHistory,
     setState: setPipelineHistory,
     undo,
     redo,
@@ -140,6 +139,7 @@ function App() {
     return () => {
       socketService.off('pipeline_progress', handleProgress);
       socketService.off('pipeline_error', handleError);
+      socketService.disconnect();
     };
   }, [loadAvailableNodes, setProcessingStatus, setIsProcessing]);
 
@@ -311,7 +311,6 @@ function App() {
     setShowShortcutsPanel,
     deleteNode,
     setEdges,
-    setPipelineHistory,
   ]);
 
   const deleteEdge = useCallback(
@@ -359,7 +358,7 @@ function App() {
   );
 
   const handleNodeClick = useCallback(
-    (event, node) => {
+    (_event, node) => {
       // Clear existing timer
       if (clickTimerRef.current) {
         clearTimeout(clickTimerRef.current);
@@ -412,7 +411,14 @@ function App() {
       event.preventDefault();
 
       const nodeType = event.dataTransfer.getData('application/reactflow');
-      const nodeData = JSON.parse(event.dataTransfer.getData('application/json'));
+      let nodeData = {};
+      try {
+        const rawData = event.dataTransfer.getData('application/json');
+        nodeData = rawData ? JSON.parse(rawData) : {};
+      } catch (error) {
+        console.error('Invalid dropped node payload:', error);
+        return;
+      }
 
       if (!nodeType) {
         return;
@@ -452,37 +458,6 @@ function App() {
     },
     [setNodes, deleteNode, handleNodeDoubleClick]
   );
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    try {
-      const response = await api.uploadImage(file);
-
-      // Update input nodes with the uploaded file
-      setNodes((nds) =>
-        nds.map((node) => {
-          if (node.data.nodeType === 'input') {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                file_id: response.data.file_id,
-                filename: response.data.filename,
-                // Preserve the handlers
-                onDelete: node.data.onDelete,
-                onDoubleClick: node.data.onDoubleClick,
-              },
-            };
-          }
-          return node;
-        })
-      );
-    } catch (error) {
-      console.error('File upload failed:', error);
-    }
-  };
 
   // Pipeline management
   const handleSavePipeline = useCallback((name) => {

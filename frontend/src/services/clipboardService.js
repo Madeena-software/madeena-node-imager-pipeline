@@ -50,4 +50,6 @@ class ClipboardService {
   }
 }
 
-export default new ClipboardService();
+const clipboardService = new ClipboardService();
+
+export default clipboardService;

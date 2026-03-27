@@ -18,13 +18,14 @@ class PipelineStorage {
   savePipeline(name, nodes, edges, metadata = {}) {
     try {
       const pipelines = this.getAllPipelines();
+      const existing = pipelines[name];
       const pipeline = {
         name,
         nodes,
         edges,
         metadata: {
+          createdAt: existing?.metadata?.createdAt || new Date().toISOString(),
           ...metadata,
-          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }
       };
@@ -69,11 +70,13 @@ class PipelineStorage {
 
     const dataStr = JSON.stringify(pipeline, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    
+    const objectUrl = URL.createObjectURL(dataBlob);
+
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(dataBlob);
+    link.href = objectUrl;
     link.download = `${name}_pipeline.json`;
     link.click();
+    URL.revokeObjectURL(objectUrl);
     
     return true;
   }
@@ -85,6 +88,15 @@ class PipelineStorage {
       reader.onload = (e) => {
         try {
           const pipeline = JSON.parse(e.target.result);
+          if (
+            !pipeline ||
+            !Array.isArray(pipeline.nodes) ||
+            !Array.isArray(pipeline.edges) ||
+            typeof pipeline.name !== 'string'
+          ) {
+            reject(new Error('Invalid pipeline structure'));
+            return;
+          }
           resolve(pipeline);
         } catch (error) {
           reject(new Error('Invalid pipeline file'));
@@ -96,4 +108,6 @@ class PipelineStorage {
   }
 }
 
-export default new PipelineStorage();
+const pipelineStorage = new PipelineStorage();
+
+export default pipelineStorage;

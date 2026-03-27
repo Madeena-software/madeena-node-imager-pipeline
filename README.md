@@ -17,6 +17,24 @@ A Node-RED style visual editor for image processing workflows. Drag and drop ima
 - **Backend**: Python Flask with OpenCV and PIL for image processing
 - **Communication**: REST API + WebSockets for real-time updates
 
+### imager-pipeline Placement
+
+Current recommendation:
+- Keep `imager-pipeline/` as a standalone Python package focused on scientific/image-processing logic.
+- Keep `backend/` as the API/orchestration layer that imports the package.
+
+This separation improves modularity and testability:
+- `imager-pipeline/`: reusable processing algorithms and calibration functions.
+- `backend/`: request validation, execution graph orchestration, file I/O, and realtime API.
+
+The backend supports explicit package path configuration via:
+
+```dotenv
+IMAGER_PIPELINE_DIR=/absolute/path/to/imager-pipeline
+```
+
+If omitted, it defaults to the repository sibling folder.
+
 ## Available Nodes
 
 ### Input/Output Nodes
