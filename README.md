@@ -20,10 +20,12 @@ A Node-RED style visual editor for image processing workflows. Drag and drop ima
 ### imager-pipeline Placement
 
 Current recommendation:
+
 - Keep `imager-pipeline/` as a standalone Python package focused on scientific/image-processing logic.
 - Keep `backend/` as the API/orchestration layer that imports the package.
 
 This separation improves modularity and testability:
+
 - `imager-pipeline/`: reusable processing algorithms and calibration functions.
 - `backend/`: request validation, execution graph orchestration, file I/O, and realtime API.
 
@@ -38,10 +40,12 @@ If omitted, it defaults to the repository sibling folder.
 ## Available Nodes
 
 ### Input/Output Nodes
+
 - **Image Input**: Load image files
 - **Image Output**: Save processed images
 
 ### Processing Nodes
+
 - **Resize**: Change image dimensions with aspect ratio options
 - **Blur**: Gaussian blur with configurable kernel size
 - **Brightness**: Adjust brightness and contrast
@@ -52,22 +56,26 @@ If omitted, it defaults to the repository sibling folder.
 ### Backend Setup
 
 1. Navigate to the backend directory:
+
 ```bash
 cd backend
 ```
 
 2. Create a virtual environment:
+
 ```bash
 python -m venv venv
 venv\Scripts\activate  # On Windows
 ```
 
 3. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 4. Run the Flask server:
+
 ```bash
 python app.py
 ```
@@ -101,6 +109,7 @@ OUTPUT_MAX_FILES=2000
 ```
 
 How it works:
+
 - Crop node defaults use `CROP_TOP/BOTTOM/LEFT/RIGHT`.
 - `GET /api/preview/<file_id>` and TIFF display no longer create temp files on disk.
 - Cleanup runs periodically and removes old files + enforces max file counts in `backend/uploads` and `backend/outputs`.
@@ -108,16 +117,19 @@ How it works:
 ### Frontend Setup
 
 1. Navigate to the frontend directory:
+
 ```bash
 cd frontend
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. Start the development server:
+
 ```bash
 npm start
 ```
@@ -132,6 +144,24 @@ The frontend will be available at `http://localhost:3000`
 4. **Configure Parameters**: Click "Config" on nodes to set parameters
 5. **Execute Pipeline**: Click "Execute Pipeline" to process the image
 6. **View Results**: Check the status panel for results and download links
+
+### Run backend from repository root
+
+You can start the backend without first changing into the `backend/` directory. Two convenient options are provided:
+
+- Using `make` (preferred if you have `make` installed):
+
+```bash
+make backend
+```
+
+- Or run the shipped wrapper script:
+
+```bash
+bash run-backend.sh
+```
+
+Both commands will prefer a virtual environment Python at `.venv/bin/python3` when present, otherwise they use the system `python3`.
 
 ## Adding New Processors
 
@@ -148,7 +178,7 @@ class YourProcessor(ImageProcessor):
         self.parameters = {
             "param_name": {"type": "number", "default": 10, "min": 1, "max": 100}
         }
-    
+
     def process(self, image_path, **kwargs):
         image = self.load_image(image_path)
         # Your processing logic here
@@ -182,12 +212,14 @@ self.processors = {
 ## Technologies Used
 
 ### Backend
+
 - Flask (Web framework)
 - OpenCV (Image processing)
 - PIL/Pillow (Image handling)
 - Flask-SocketIO (WebSocket support)
 
 ### Frontend
+
 - React (UI framework)
 - React Flow (Node-based editor)
 - Axios (HTTP client)
